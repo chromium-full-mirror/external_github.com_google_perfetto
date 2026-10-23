@@ -2426,9 +2426,10 @@ typedef enum SyntaqliteNodeTag {
     SYNTAQLITE_NODE_PERFETTO_PER_COLUMN_LIST = 133,
     SYNTAQLITE_NODE_PERFETTO_INTERVAL_FLATTEN = 134,
     SYNTAQLITE_NODE_PERFETTO_INTERVAL_FILL_GAPS = 135,
-    SYNTAQLITE_NODE_PERFETTO_INTERVAL_INTERSECTION = 136,
-    SYNTAQLITE_NODE_PERFETTO_GRAPH_TREE = 137,
-    SYNTAQLITE_NODE_PERFETTO_PIPELINE = 138,
+    SYNTAQLITE_NODE_PERFETTO_TREE_FROM_INTERVALS = 136,
+    SYNTAQLITE_NODE_PERFETTO_INTERVAL_INTERSECTION = 137,
+    SYNTAQLITE_NODE_PERFETTO_GRAPH_TREE = 138,
+    SYNTAQLITE_NODE_PERFETTO_PIPELINE = 139,
     SYNTAQLITE_NODE_COUNT
 } SyntaqliteNodeTag;
 SYNQ_STATIC_ASSERT(sizeof(SyntaqliteNodeTag) == sizeof(uint32_t),
@@ -3425,6 +3426,11 @@ typedef struct SyntaqlitePerfettoIntervalFillGaps {
     uint32_t per;
 } SyntaqlitePerfettoIntervalFillGaps;
 
+typedef struct SyntaqlitePerfettoTreeFromIntervals {
+    SyntaqliteNodeTag tag;
+    uint32_t on_expr;
+} SyntaqlitePerfettoTreeFromIntervals;
+
 typedef struct SyntaqlitePerfettoIntervalIntersection {
     SyntaqliteNodeTag tag;
     uint32_t operands;
@@ -3586,6 +3592,7 @@ typedef union SyntaqliteNode {
     SyntaqlitePerfettoPerColumnList perfetto_per_column_list;
     SyntaqlitePerfettoIntervalFlatten perfetto_interval_flatten;
     SyntaqlitePerfettoIntervalFillGaps perfetto_interval_fill_gaps;
+    SyntaqlitePerfettoTreeFromIntervals perfetto_tree_from_intervals;
     SyntaqlitePerfettoIntervalIntersection perfetto_interval_intersection;
     SyntaqlitePerfettoGraphTree perfetto_graph_tree;
     SyntaqlitePerfettoPipeline perfetto_pipeline;
@@ -4108,6 +4115,7 @@ typedef union SyntaqlitePerfettoPipeStage {
     SyntaqlitePerfettoPipeWhere perfetto_pipe_where;
     SyntaqlitePerfettoPipeDistinct perfetto_pipe_distinct;
     SyntaqlitePerfettoTreeAccumulate perfetto_tree_accumulate;
+    SyntaqlitePerfettoTreeFromIntervals perfetto_tree_from_intervals;
     SyntaqlitePerfettoIntervalFlatten perfetto_interval_flatten;
     SyntaqlitePerfettoIntervalFillGaps perfetto_interval_fill_gaps;
     SyntaqlitePerfettoPipeOrderBy perfetto_pipe_order_by;
@@ -4125,6 +4133,7 @@ static inline int syntaqlite_is_perfetto_pipe_stage(SyntaqliteNodeTag tag) {
         case SYNTAQLITE_NODE_PERFETTO_PIPE_WHERE: return 1;
         case SYNTAQLITE_NODE_PERFETTO_PIPE_DISTINCT: return 1;
         case SYNTAQLITE_NODE_PERFETTO_TREE_ACCUMULATE: return 1;
+        case SYNTAQLITE_NODE_PERFETTO_TREE_FROM_INTERVALS: return 1;
         case SYNTAQLITE_NODE_PERFETTO_INTERVAL_FLATTEN: return 1;
         case SYNTAQLITE_NODE_PERFETTO_INTERVAL_FILL_GAPS: return 1;
         case SYNTAQLITE_NODE_PERFETTO_PIPE_ORDER_BY: return 1;
@@ -4149,6 +4158,10 @@ static inline const SyntaqlitePerfettoPipeDistinct* syntaqlite_perfetto_pipe_sta
 
 static inline const SyntaqlitePerfettoTreeAccumulate* syntaqlite_perfetto_pipe_stage_as_perfetto_tree_accumulate(const SyntaqlitePerfettoPipeStage* node) {
     return node->tag == SYNTAQLITE_NODE_PERFETTO_TREE_ACCUMULATE ? &node->perfetto_tree_accumulate : NULL;
+}
+
+static inline const SyntaqlitePerfettoTreeFromIntervals* syntaqlite_perfetto_pipe_stage_as_perfetto_tree_from_intervals(const SyntaqlitePerfettoPipeStage* node) {
+    return node->tag == SYNTAQLITE_NODE_PERFETTO_TREE_FROM_INTERVALS ? &node->perfetto_tree_from_intervals : NULL;
 }
 
 static inline const SyntaqlitePerfettoIntervalFlatten* syntaqlite_perfetto_pipe_stage_as_perfetto_interval_flatten(const SyntaqlitePerfettoPipeStage* node) {
@@ -4741,6 +4754,10 @@ template <> struct NodeTag<SyntaqlitePerfettoIntervalFillGaps> {
   static constexpr bool kHasTag = true;
   static constexpr uint32_t kValue = SYNTAQLITE_NODE_PERFETTO_INTERVAL_FILL_GAPS;
 };
+template <> struct NodeTag<SyntaqlitePerfettoTreeFromIntervals> {
+  static constexpr bool kHasTag = true;
+  static constexpr uint32_t kValue = SYNTAQLITE_NODE_PERFETTO_TREE_FROM_INTERVALS;
+};
 template <> struct NodeTag<SyntaqlitePerfettoIntervalIntersection> {
   static constexpr bool kHasTag = true;
   static constexpr uint32_t kValue = SYNTAQLITE_NODE_PERFETTO_INTERVAL_INTERSECTION;
@@ -4963,20 +4980,21 @@ template <> struct NodeTag<SyntaqlitePerfettoPipeline> {
 #define SYNTAQLITE_TK_UP                             197
 #define SYNTAQLITE_TK_DOWN                           198
 #define SYNTAQLITE_TK_INTERVAL                       199
-#define SYNTAQLITE_TK_INTERSECTION                   200
-#define SYNTAQLITE_TK_PER                            201
-#define SYNTAQLITE_TK_EXTEND                         202
-#define SYNTAQLITE_TK_FLATTEN                        203
-#define SYNTAQLITE_TK_AGGREGATE                      204
-#define SYNTAQLITE_TK_FILL                           205
-#define SYNTAQLITE_TK_GAPS                           206
-#define SYNTAQLITE_TK_GRAPH                          207
-#define SYNTAQLITE_TK_BFS                            208
-#define SYNTAQLITE_TK_DFS                            209
-#define SYNTAQLITE_TK_DOMINATOR                      210
-#define SYNTAQLITE_TK_NODES                          211
-#define SYNTAQLITE_TK_EDGES                          212
-#define SYNTAQLITE_TK_PIPE                           213
+#define SYNTAQLITE_TK_INTERVALS                      200
+#define SYNTAQLITE_TK_INTERSECTION                   201
+#define SYNTAQLITE_TK_PER                            202
+#define SYNTAQLITE_TK_EXTEND                         203
+#define SYNTAQLITE_TK_FLATTEN                        204
+#define SYNTAQLITE_TK_AGGREGATE                      205
+#define SYNTAQLITE_TK_FILL                           206
+#define SYNTAQLITE_TK_GAPS                           207
+#define SYNTAQLITE_TK_GRAPH                          208
+#define SYNTAQLITE_TK_BFS                            209
+#define SYNTAQLITE_TK_DFS                            210
+#define SYNTAQLITE_TK_DOMINATOR                      211
+#define SYNTAQLITE_TK_NODES                          212
+#define SYNTAQLITE_TK_EDGES                          213
+#define SYNTAQLITE_TK_PIPE                           214
 
 /* syntaqlite extension: expected terminals for current parser state. */
 uint32_t SynqPerfettoParseExpectedTokens(void* parser, uint32_t* out_tokens, uint32_t out_cap);

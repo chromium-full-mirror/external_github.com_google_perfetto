@@ -74,6 +74,8 @@ source_set("exec") {
     "sorted_rows.h",
     "tree_accumulate.cc",
     "tree_accumulate.h",
+    "tree_from_intervals.cc",
+    "tree_from_intervals.h",
     "tree_number_nodes.cc",
     "tree_number_nodes.h",
     "tree_order.cc",
@@ -129,6 +131,7 @@ perfetto_unittest_source_set("unittests") {
     "row_store_unittest.cc",
     "sort_unittest.cc",
     "tree_accumulate_unittest.cc",
+    "tree_from_intervals_unittest.cc",
     "tree_number_nodes_unittest.cc",
     "tree_order_unittest.cc",
   ]

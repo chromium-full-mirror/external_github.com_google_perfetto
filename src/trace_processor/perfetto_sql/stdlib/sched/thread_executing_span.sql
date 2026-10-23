@@ -263,6 +263,110 @@ FROM _wakeup_events
 ORDER BY
   id;
 
+-- Piece-wise constant functional map of thread state intervals:
+-- Every interval [ts, ts + dur) on `utid` either terminates (`target_utid` is
+-- NULL when running or in unattributed/IRQ sleep) or delegates to `target_utid`
+-- (when sleeping before a process-context wakeup).
+CREATE PERFETTO TABLE _wait_edge AS
+FROM (
+  SELECT
+    utid,
+    ts,
+    dur,
+    CAST(NULL AS LONG) AS target_utid,
+    id AS node_id,
+    0 AS is_open_idle
+  FROM _wakeup_graph
+  WHERE
+    dur > 0
+  UNION ALL
+  SELECT
+    g.utid,
+    g.ts - g.idle_dur AS ts,
+    g.idle_dur AS dur,
+    w.utid AS target_utid,
+    g.id AS node_id,
+    0 AS is_open_idle
+  FROM _wakeup_graph AS g
+  LEFT JOIN _wakeup_graph AS w
+    ON w.id = g.waker_id
+  WHERE
+    g.idle_dur > 0
+    AND ((g.prev_id IS NOT NULL AND g.waker_id IS NULL) OR w.id IS NOT NULL)
+  UNION ALL
+  SELECT
+    g.utid,
+    trace_start() AS ts,
+    iif(w.id IS NOT NULL AND g.idle_dur > 0, g.ts - g.idle_dur, g.ts)
+    - trace_start() AS dur,
+    iif(g.idle_dur IS NULL, w.utid, NULL) AS target_utid,
+    g.id AS node_id,
+    1 AS is_open_idle
+  FROM _wakeup_graph AS g
+  LEFT JOIN _wakeup_graph AS w
+    ON w.id = g.waker_id
+  WHERE
+    g.prev_id IS NULL
+    AND iif(w.id IS NOT NULL AND g.idle_dur > 0, g.ts - g.idle_dur, g.ts)
+    > trace_start()
+)
+|> ORDER BY utid, ts;
+
+-- Every interval slice of the trace resolved to the leaf thread (`utid`) and
+-- executing span (`id`) that `root_utid` was transitively waiting on.
+CREATE PERFETTO TABLE _critical_path_all AS
+FROM _wait_edge
+|> TREE FROM INTERVALS ON child.target_utid = parent.utid
+|> TREE ACCUMULATE DOWN FIRST(utid) AS cp_utid, FIRST(node_id) AS cp_id
+|> WHERE is_open_idle = 0
+|> SELECT
+  utid AS root_utid,
+  node_id AS root_id,
+  cp_id AS id,
+  ts,
+  dur,
+  cp_utid AS utid;
+
+-- Generates the critical path for a given utid over the <ts, dur> interval.
+-- The duration of a thread executing span in the critical path is the range between the
+-- start of the thread_executing_span and the start of the next span in the critical path.
+CREATE PERFETTO FUNCTION _thread_executing_span_critical_path(
+  -- Utid of the thread to compute the critical path for.
+  root_utid JOINID(thread.id),
+  -- Timestamp.
+  ts TIMESTAMP,
+  -- Duration.
+  dur DURATION
+)
+RETURNS TABLE(
+  -- Thread Utid the critical path was filtered to.
+  root_utid JOINID(thread.id),
+  -- Id of thread executing span following the sleeping thread state for which the critical path is
+  -- computed.
+  root_id LONG,
+  -- Id of the first (runnable) thread state in thread_executing_span.
+  id LONG,
+  -- Timestamp of first thread_state in thread_executing_span.
+  ts TIMESTAMP,
+  -- Duration of thread_executing_span.
+  dur DURATION,
+  -- Utid of thread with thread_state.
+  utid JOINID(thread.id)
+)
+AS
+SELECT
+  root_utid,
+  root_id,
+  id,
+  max(ts, $ts) AS ts,
+  min(ts + dur, $ts + $dur) - max(ts, $ts) AS dur,
+  utid
+FROM _critical_path_all
+WHERE
+  root_utid = $root_utid
+  AND ts < $ts + $dur
+  AND ts + dur > $ts;
+
 -- Converts a table with <ts, dur, utid> columns to a unique set of wakeup roots <id> that
 -- completely cover the time intervals.
 CREATE PERFETTO MACRO _intervals_to_roots(
@@ -504,37 +608,4 @@ AS (
     ON _span.id = ii.id_0
   JOIN _intervals
     ON _intervals.id = ii.id_1
-);
-
--- Generates the critical path for a given utid over the <ts, dur> interval.
--- The duration of a thread executing span in the critical path is the range between the
--- start of the thread_executing_span and the start of the next span in the critical path.
-CREATE PERFETTO FUNCTION _thread_executing_span_critical_path(
-  -- Utid of the thread to compute the critical path for.
-  root_utid JOINID(thread.id),
-  -- Timestamp.
-  ts TIMESTAMP,
-  -- Duration.
-  dur DURATION
-)
-RETURNS TABLE(
-  -- Thread Utid the critical path was filtered to.
-  root_utid JOINID(thread.id),
-  -- Id of thread executing span following the sleeping thread state for which the critical path is
-  -- computed.
-  root_id LONG,
-  -- Id of the first (runnable) thread state in thread_executing_span.
-  id LONG,
-  -- Timestamp of first thread_state in thread_executing_span.
-  ts TIMESTAMP,
-  -- Duration of thread_executing_span.
-  dur DURATION,
-  -- Utid of thread with thread_state.
-  utid JOINID(thread.id)
-)
-AS
-SELECT root_utid, root_id, id, ts, dur, utid
-FROM _critical_path_by_intervals!(
-  (SELECT $root_utid AS utid, $ts AS ts, $dur AS dur),
-  _wakeup_graph
 );

@@ -26,6 +26,7 @@
 #include "src/trace_processor/perfetto_sql/pipeline/operations/projection.h"
 #include "src/trace_processor/perfetto_sql/pipeline/operations/scan.h"
 #include "src/trace_processor/perfetto_sql/pipeline/operations/tree_accumulate.h"
+#include "src/trace_processor/perfetto_sql/pipeline/operations/tree_from_intervals.h"
 #include "src/trace_processor/perfetto_sql/pipeline/operations/where.h"
 
 namespace perfetto::trace_processor::pipeline {
@@ -38,6 +39,7 @@ const OperationRegistration* const kOperations[] = {
     &IntervalIntersect::kRegistration,
     &IntervalFlatten::kRegistration,
     &IntervalFillGaps::kRegistration,
+    &TreeFromIntervals::kRegistration,
     &OrderBy::kRegistration,
     &AggregateStage::kRegistration,
     &Distinct::kRegistration,

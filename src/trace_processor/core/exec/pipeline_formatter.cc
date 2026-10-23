@@ -41,6 +41,7 @@
 #include "src/trace_processor/core/exec/sort.h"
 #include "src/trace_processor/core/exec/sorted_rows.h"
 #include "src/trace_processor/core/exec/tree_accumulate.h"
+#include "src/trace_processor/core/exec/tree_from_intervals.h"
 #include "src/trace_processor/core/exec/tree_number_nodes.h"
 #include "src/trace_processor/core/exec/tree_order.h"
 
@@ -120,6 +121,12 @@ std::string Aggregates(const std::vector<AggregateCall>& calls) {
         break;
       case AggregateCall::Function::kMax:
         text = "MAX(" + arg + ")";
+        break;
+      case AggregateCall::Function::kFirst:
+        text = "FIRST(" + arg + ")";
+        break;
+      case AggregateCall::Function::kLast:
+        text = "LAST(" + arg + ")";
         break;
     }
     out += (out.empty() ? "" : ", ") + text;
@@ -253,6 +260,12 @@ std::string PipelineFormatter::OperatorString(const Operator& op) {
         static_cast<const IntervalFillGaps&>(op).spec_;
     return "IntervalFillGaps(" + Lanes(spec.input) +
            "; background: " + Lanes(spec.background.lanes) + ")";
+  }
+  if (op.Is<TreeFromIntervals>()) {
+    const TreeFromIntervalsSpec& spec =
+        static_cast<const TreeFromIntervals&>(op).spec_;
+    return "TreeFromIntervals(" + Lanes(spec.input) +
+           "; to: " + Columns(spec.next_key_columns) + ")";
   }
   if (op.Is<IntervalFlatten>()) {
     const IntervalFlattenSpec& spec =

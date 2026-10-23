@@ -33,6 +33,7 @@
 #include "src/trace_processor/perfetto_sql/pipeline/operations/order_by.h"
 #include "src/trace_processor/perfetto_sql/pipeline/operations/scan.h"
 #include "src/trace_processor/perfetto_sql/pipeline/operations/tree_accumulate.h"
+#include "src/trace_processor/perfetto_sql/pipeline/operations/tree_from_intervals.h"
 #include "src/trace_processor/perfetto_sql/pipeline/operations/where.h"
 
 namespace perfetto::trace_processor::pipeline {
@@ -51,6 +52,10 @@ std::string AggregateString(const Aggregate& agg) {
       return "MIN(#" + std::to_string(agg.column) + ")";
     case Aggregate::Function::kMax:
       return "MAX(#" + std::to_string(agg.column) + ")";
+    case Aggregate::Function::kFirst:
+      return "FIRST(#" + std::to_string(agg.column) + ")";
+    case Aggregate::Function::kLast:
+      return "LAST(#" + std::to_string(agg.column) + ")";
   }
   return "";
 }
@@ -124,6 +129,8 @@ class LogicalPlanFormatter {
                                              const PlanNode&);
   static std::string IntervalFillGapsString(const LogicalPlan&,
                                             const PlanNode&);
+  static std::string TreeFromIntervalsString(const LogicalPlan&,
+                                             const PlanNode&);
   static std::string OrderByString(const OrderBy&);
   static std::string DistinctString(const Distinct&);
   static std::string WhereString(const Where&);
@@ -241,6 +248,24 @@ std::string LogicalPlanFormatter::IntervalFillGapsString(
          ScanString(plan, plan.nodes()[node.children()[1]].Cast<Scan>());
 }
 
+std::string LogicalPlanFormatter::TreeFromIntervalsString(
+    const LogicalPlan& plan,
+    const PlanNode& node) {
+  const auto& tree = node.Cast<TreeFromIntervals>();
+  std::string out = "TreeFromIntervals(ts=#" + std::to_string(tree.in_ts_) +
+                    ", dur=#" + std::to_string(tree.in_dur_);
+  for (ColumnId key : tree.keys_) {
+    out += ", key=#" + std::to_string(key);
+  }
+  for (ColumnId to_key : tree.next_keys_) {
+    out += ", to=#" + std::to_string(to_key);
+  }
+  return out + ") -> " + ColumnString(plan, tree.out_ts_) + ", " +
+         ColumnString(plan, tree.out_dur_) + ", " +
+         ColumnString(plan, tree.out_id_) + ", " +
+         ColumnString(plan, tree.out_parent_id_);
+}
+
 std::string LogicalPlanFormatter::OrderByString(const OrderBy& order) {
   std::string out = "OrderBy(";
   for (size_t i = 0; i < order.keys_.size(); ++i) {
@@ -305,6 +330,10 @@ std::string LogicalPlanFormatter::SubtreeString(const LogicalPlan& plan,
   if (node.Is<IntervalFillGaps>()) {
     return SubtreeString(plan, node.children()[0]) +
            IntervalFillGapsString(plan, node) + "\n";
+  }
+  if (node.Is<TreeFromIntervals>()) {
+    return SubtreeString(plan, node.children()[0]) +
+           TreeFromIntervalsString(plan, node) + "\n";
   }
   if (node.Is<IntervalFlatten>()) {
     return SubtreeString(plan, node.children()[0]) +
