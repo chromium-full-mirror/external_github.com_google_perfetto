@@ -91,44 +91,10 @@ class ArgsTracker {
   // Interns the arg set formed by |args| and returns its id. Keys in |args|
   // must be unique.
   ArgSetId AddArgSet(const CompactArg* args, uint32_t count) {
-    base::MurmurHashCombiner combiner;
-    for (uint32_t i = 0; i < count; ++i) {
-      const CompactArg& arg = args[i];
-      combiner.Combine(arg.key);
-      combiner.Combine(arg.value.type);
-      // We don't hash arg.flat_key because it's a subsequence of arg.key.
-      switch (arg.value.type) {
-        case Variadic::Type::kInt:
-          combiner.Combine(arg.value.int_value);
-          break;
-        case Variadic::Type::kUint:
-          combiner.Combine(arg.value.uint_value);
-          break;
-        case Variadic::Type::kString:
-          combiner.Combine(arg.value.string_value);
-          break;
-        case Variadic::Type::kReal:
-          combiner.Combine(arg.value.real_value);
-          break;
-        case Variadic::Type::kPointer:
-          combiner.Combine(arg.value.pointer_value);
-          break;
-        case Variadic::Type::kBool:
-          combiner.Combine(arg.value.bool_value);
-          break;
-        case Variadic::Type::kJson:
-          combiner.Combine(arg.value.json_value);
-          break;
-        case Variadic::Type::kNull:
-          combiner.Combine(0);
-          break;
-      }
-    }
-
     auto& arg_table = *storage_->mutable_arg_table();
 
     uint32_t arg_set_id = arg_table.row_count();
-    ArgSetHash digest = combiner.digest();
+    ArgSetHash digest = ComputeArgSetHash(args, count);
     auto [it, inserted] = arg_row_for_hash_.Insert(digest, arg_set_id);
     if (!inserted) {
       // Already inserted.
@@ -174,8 +140,47 @@ class ArgsTracker {
 
  private:
   friend class ArgsInserter;
+  friend class TrackTracker;
 
   using ArgSetHash = uint64_t;
+
+  static ArgSetHash ComputeArgSetHash(const CompactArg* args, uint32_t count) {
+    base::MurmurHashCombiner combiner;
+    for (uint32_t i = 0; i < count; ++i) {
+      const CompactArg& arg = args[i];
+      combiner.Combine(arg.key);
+      combiner.Combine(arg.value.type);
+      // We don't hash arg.flat_key because it's a subsequence of arg.key.
+      switch (arg.value.type) {
+        case Variadic::Type::kInt:
+          combiner.Combine(arg.value.int_value);
+          break;
+        case Variadic::Type::kUint:
+          combiner.Combine(arg.value.uint_value);
+          break;
+        case Variadic::Type::kString:
+          combiner.Combine(arg.value.string_value);
+          break;
+        case Variadic::Type::kReal:
+          combiner.Combine(arg.value.real_value);
+          break;
+        case Variadic::Type::kPointer:
+          combiner.Combine(arg.value.pointer_value);
+          break;
+        case Variadic::Type::kBool:
+          combiner.Combine(arg.value.bool_value);
+          break;
+        case Variadic::Type::kJson:
+          combiner.Combine(arg.value.json_value);
+          break;
+        case Variadic::Type::kNull:
+          combiner.Combine(0);
+          break;
+      }
+    }
+
+    return combiner.digest();
+  }
 
   // Reusable accumulation buffer for one ArgsInserter, recycled via the pool
   // below so short-lived inserters don't churn allocations.
