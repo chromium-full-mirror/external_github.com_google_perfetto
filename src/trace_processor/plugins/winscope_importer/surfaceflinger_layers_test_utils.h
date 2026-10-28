@@ -41,6 +41,11 @@ struct ActiveBuffer {
   int32_t format;
 };
 
+struct Display {
+  uint32_t layer_stack;
+  geometry::Rect layer_stack_space_rect;
+};
+
 namespace {
 using LayerProto = com::android::internal::gen::LayerProto;
 void UpdateColor(com::android::internal::gen::LayerProto* layer, Color color) {
@@ -119,6 +124,16 @@ class Layer {
     return *this;
   }
 
+  Layer& AddTransparentRegionRect(geometry::Rect value) {
+    transparent_region_rects_.push_back(value);
+    return *this;
+  }
+
+  Layer& SetPosition(geometry::Point value) {
+    position_ = value;
+    return *this;
+  }
+
   Layer& SetIsOpaque(bool value) {
     is_opaque_ = value;
     return *this;
@@ -168,6 +183,8 @@ class Layer {
   std::optional<geometry::Rect> screen_bounds_;
   std::optional<geometry::Rect> bounds_;
   std::optional<std::vector<geometry::Rect>> visible_region_rects_;
+  std::vector<geometry::Rect> transparent_region_rects_;
+  std::optional<geometry::Point> position_;
   std::optional<bool> is_opaque_;
   std::optional<uint32_t> layer_stack_;
   std::optional<int32_t> z_;
@@ -192,9 +209,21 @@ class SnapshotProtoBuilder {
     return *this;
   }
 
+  SnapshotProtoBuilder& AddDisplay(const Display& value) {
+    displays_.push_back(value);
+    return *this;
+  }
+
   std::string Build() {
     com::android::internal::gen::LayersSnapshotProto snapshot_proto;
     snapshot_proto.set_excludes_composition_state(excludes_composition_state_);
+    for (const auto& display : displays_) {
+      auto* display_proto = snapshot_proto.add_displays();
+      display_proto->set_layer_stack(display.layer_stack);
+      geometry::test::UpdateRect(
+          display_proto->mutable_layer_stack_space_rect(),
+          display.layer_stack_space_rect);
+    }
     auto* layers_proto = snapshot_proto.mutable_layers();
 
     auto i = 1;
@@ -240,6 +269,19 @@ class SnapshotProtoBuilder {
           geometry::test::UpdateRect(visible_region_proto->add_rect(), rect);
         }
       }
+      if (!layer.transparent_region_rects_.empty()) {
+        auto* transparent_region_proto =
+            layer_proto->mutable_transparent_region();
+        for (auto& rect : layer.transparent_region_rects_) {
+          geometry::test::UpdateRect(transparent_region_proto->add_rect(),
+                                     rect);
+        }
+      }
+      if (layer.position_.has_value()) {
+        auto* position_proto = layer_proto->mutable_position();
+        position_proto->set_x(static_cast<float>(layer.position_->x));
+        position_proto->set_y(static_cast<float>(layer.position_->y));
+      }
       if (layer.is_opaque_.has_value()) {
         layer_proto->set_is_opaque(layer.is_opaque_.value());
       }
@@ -270,6 +312,7 @@ class SnapshotProtoBuilder {
  private:
   bool excludes_composition_state_ = false;
   std::vector<Layer> layers_;
+  std::vector<Display> displays_;
 };
 
 }  // namespace perfetto::trace_processor::winscope::surfaceflinger_layers::test

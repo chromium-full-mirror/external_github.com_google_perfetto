@@ -71,6 +71,8 @@ class VisibilityComputation {
   StringPool::Id no_effects_id_;
   StringPool::Id empty_visible_region_id_;
   StringPool::Id null_visible_region_id_;
+  StringPool::Id visible_region_outside_display_id_;
+  StringPool::Id visible_region_transparent_id_;
   StringPool::Id occluded_id_;
 
   std::vector<int32_t> opaque_layer_ids = {};
@@ -84,13 +86,15 @@ class VisibilityComputation {
   // change based on the hierarchy drawing order, if a layer is occluded by
   // another.
   bool IsLayerVisibleInIsolation(const LayerDecoder& layer,
-                                 bool excludes_composition_state);
+                                 bool excludes_composition_state,
+                                 const std::optional<geometry::Rect>& crop);
 
   // Return list of reasons why a layer is not visible. These are added to the
   // args table.
   std::vector<StringPool::Id> GetVisibilityReasons(
       const LayerDecoder& layer,
       bool excludes_composition_state,
+      const std::optional<geometry::Rect>& crop,
       const std::vector<int32_t>& occluding_layers);
 };
 

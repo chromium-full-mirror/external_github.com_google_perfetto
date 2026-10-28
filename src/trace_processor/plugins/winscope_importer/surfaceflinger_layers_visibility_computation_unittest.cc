@@ -36,6 +36,11 @@ Layer MakeVisibleLayer() {
       .AddVisibleRegionRect(geometry::Rect(0, 0, 1080, 2400));
 }
 
+Layer MakeVisibleLayer(geometry::Rect visible_region) {
+  return MakeVisibleLayer().InitializeVisibleRegion().AddVisibleRegionRect(
+      visible_region);
+}
+
 std::unordered_map<int32_t, VisibilityProperties> ComputeVisibility(
     const std::string& snapshot,
     StringPool* pool) {
@@ -236,6 +241,102 @@ TEST(SfVisibilityComputation, NotVisibleEmptyVisibleRegion) {
   CheckLayerNotVisibleInIsolation(
       result, {"visible region calculated by Composition Engine is empty"},
       pool);
+}
+
+TEST(SfVisibilityComputation, NotVisibleVisibleRegionOutsideDisplay) {
+  const auto snapshot =
+      SnapshotProtoBuilder()
+          .AddDisplay(Display{0, geometry::Rect(0, 0, 1080, 2400)})
+          .AddLayer(MakeVisibleLayer(geometry::Rect(1080, 0, 2160, 2400)))
+          .Build();
+  StringPool pool;
+
+  auto result = ComputeVisibility(snapshot, &pool);
+  CheckLayerNotVisibleInIsolation(
+      result, {"visible region is outside the display"}, pool);
+}
+
+TEST(SfVisibilityComputation, VisibleVisibleRegionPartlyOnDisplay) {
+  const auto snapshot =
+      SnapshotProtoBuilder()
+          .AddDisplay(Display{0, geometry::Rect(0, 0, 1080, 2400)})
+          .AddLayer(MakeVisibleLayer(geometry::Rect(540, 0, 1620, 2400)))
+          .Build();
+  StringPool pool;
+
+  auto result = ComputeVisibility(snapshot, &pool);
+  CheckLayerVisible(result, 1);
+}
+
+TEST(SfVisibilityComputation, VisibleVisibleRegionWithoutDisplayForLayerStack) {
+  const auto snapshot =
+      SnapshotProtoBuilder()
+          .AddDisplay(Display{1, geometry::Rect(0, 0, 1080, 2400)})
+          .AddLayer(MakeVisibleLayer(geometry::Rect(1080, 0, 2160, 2400)))
+          .Build();
+  StringPool pool;
+
+  auto result = ComputeVisibility(snapshot, &pool);
+  CheckLayerVisible(result, 1);
+}
+
+TEST(SfVisibilityComputation,
+     NotVisibleVisibleRegionCoveredByTransparentRegion) {
+  const auto snapshot =
+      SnapshotProtoBuilder()
+          .AddLayer(
+              MakeVisibleLayer()
+                  .AddTransparentRegionRect(geometry::Rect(0, 0, 1080, 1200))
+                  .AddTransparentRegionRect(
+                      geometry::Rect(0, 1200, 1080, 2400)))
+          .Build();
+  StringPool pool;
+
+  auto result = ComputeVisibility(snapshot, &pool);
+  CheckLayerNotVisibleInIsolation(
+      result, {"visible region is covered by the transparent region"}, pool);
+}
+
+TEST(SfVisibilityComputation, NotVisibleTransparentRegionInLayerSpace) {
+  const auto snapshot =
+      SnapshotProtoBuilder()
+          .AddLayer(
+              MakeVisibleLayer(geometry::Rect(0, 100, 1080, 232))
+                  .SetBounds(geometry::Rect(0, 0, 1080, 132))
+                  .SetPosition(geometry::Point{0, 100})
+                  .AddTransparentRegionRect(geometry::Rect(0, 0, 1080, 132)))
+          .Build();
+  StringPool pool;
+
+  auto result = ComputeVisibility(snapshot, &pool);
+  CheckLayerNotVisibleInIsolation(
+      result, {"visible region is covered by the transparent region"}, pool);
+}
+
+TEST(SfVisibilityComputation,
+     VisibleVisibleRegionPartlyCoveredByTransparentRegion) {
+  const auto snapshot =
+      SnapshotProtoBuilder()
+          .AddLayer(MakeVisibleLayer().AddTransparentRegionRect(
+              geometry::Rect(0, 0, 1080, 1200)))
+          .Build();
+  StringPool pool;
+
+  auto result = ComputeVisibility(snapshot, &pool);
+  CheckLayerVisible(result, 1);
+}
+
+TEST(SfVisibilityComputation, VisibleOpaqueLayerWithTransparentRegion) {
+  const auto snapshot =
+      SnapshotProtoBuilder()
+          .AddLayer(
+              MakeVisibleLayer().SetIsOpaque(true).AddTransparentRegionRect(
+                  geometry::Rect(0, 0, 1080, 2400)))
+          .Build();
+  StringPool pool;
+
+  auto result = ComputeVisibility(snapshot, &pool);
+  CheckLayerVisible(result, 1);
 }
 
 TEST(SfVisibilityComputation, NotVisibleOccluded) {

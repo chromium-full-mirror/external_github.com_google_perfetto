@@ -15,7 +15,9 @@
  */
 
 #include "src/trace_processor/plugins/winscope_importer/surfaceflinger_layers_visibility_computation.h"
+#include <cmath>
 #include <optional>
+#include <vector>
 #include "perfetto/ext/base/string_view.h"
 #include "protos/third_party/android/frameworks/native/tracing/winscope/common/rect.pbzero.h"
 #include "protos/third_party/android/frameworks/native/tracing/winscope/surfaceflinger_common.pbzero.h"
@@ -26,6 +28,8 @@ namespace perfetto::trace_processor::winscope::surfaceflinger_layers {
 
 namespace {
 using ColorDecoder = com::android::internal::pbzero::ColorProto::Decoder;
+using RectDecoder = com::android::internal::pbzero::RectProto::Decoder;
+using RegionDecoder = com::android::internal::pbzero::RegionProto::Decoder;
 
 bool IsHiddenByParent(
     const LayerDecoder& layer,
@@ -101,6 +105,47 @@ bool HasVisibleRegion(const LayerDecoder& layer,
   return !HasEmptyVisibleRegion(layer);
 }
 
+// The visible region cropped to the display. Unlike CompositionEngine's,
+// FrontEnd visible regions aren't culled to it.
+std::vector<geometry::Rect> GetVisibleRectsOnDisplay(
+    const LayerDecoder& layer,
+    const std::optional<geometry::Rect>& crop) {
+  std::vector<geometry::Rect> rects;
+  const RegionDecoder region(layer.visible_region());
+  for (auto it = region.rect(); it; ++it) {
+    auto rect = geometry::Rect(RectDecoder(*it));
+    if (crop.has_value() && !crop->IsEmpty()) {
+      rect = rect.CropRect(*crop);
+    }
+    if (!rect.IsEmpty()) {
+      rects.push_back(rect);
+    }
+  }
+  return rects;
+}
+
+// Appends the parts of rect outside hole to out.
+void SubtractRect(const geometry::Rect& rect,
+                  const geometry::Rect& hole,
+                  std::vector<geometry::Rect>& out) {
+  const auto o = rect.CropRect(hole);
+  if (o.IsEmpty()) {
+    out.push_back(rect);
+    return;
+  }
+  const double right = rect.x + rect.w;
+  const double bottom = rect.y + rect.h;
+  for (const geometry::Rect& part :
+       {geometry::Rect(rect.x, rect.y, right, o.y),
+        geometry::Rect(rect.x, o.y + o.h, right, bottom),
+        geometry::Rect(rect.x, o.y, o.x, o.y + o.h),
+        geometry::Rect(o.x + o.w, o.y, right, o.y + o.h)}) {
+    if (!part.IsEmpty()) {
+      out.push_back(part);
+    }
+  }
+}
+
 bool LayerContains(const LayerDecoder& layer,
                    const LayerDecoder& other,
                    const std::optional<geometry::Rect> crop) {
@@ -165,6 +210,40 @@ bool IsColorEmpty(const LayerDecoder& layer) {
   return !HasValidRgb(ColorDecoder(layer.color()));
 }
 
+// Like CompositionEngine, which uses the hint, clipped to the layer bounds,
+// only for non-opaque layers whose transform preserves rects.
+void SubtractTransparentRegion(const LayerDecoder& layer,
+                               std::vector<geometry::Rect>& rects) {
+  const auto radii = layer::GetCornerRadii(layer);
+  const bool opaque = IsOpaque(layer) && radii.tl <= 0 && radii.tr <= 0 &&
+                      radii.bl <= 0 && radii.br <= 0;
+  if (!layer.has_transparent_region() || opaque ||
+      (layer.has_transform() &&
+       transform::IsInvalidRotation(
+           TransformDecoder(layer.transform()).type()))) {
+    return;
+  }
+  const auto matrix = layer::GetTransformMatrix(layer);
+  const RegionDecoder region(layer.transparent_region());
+  for (auto it = region.rect(); it && !rects.empty(); ++it) {
+    auto hint = geometry::Rect(RectDecoder(*it));
+    if (layer.has_bounds()) {
+      hint = hint.CropRect(layer::GetBounds(layer));
+    }
+    if (hint.IsEmpty()) {
+      continue;
+    }
+    const auto t = matrix.TransformRect(hint);
+    const geometry::Rect hole(std::round(t.x), std::round(t.y),
+                              std::round(t.x + t.w), std::round(t.y + t.h));
+    std::vector<geometry::Rect> remaining;
+    for (const auto& rect : rects) {
+      SubtractRect(rect, hole, remaining);
+    }
+    rects = std::move(remaining);
+  }
+}
+
 geometry::Rect GetDisplayCrop(
     const LayerDecoder& layer,
     const com::android::internal::pbzero::LayersSnapshotProto::Decoder&
@@ -206,6 +285,10 @@ VisibilityComputation::VisibilityComputation(
       empty_visible_region_id_(pool_->InternString(
           "visible region calculated by Composition Engine is empty")),
       null_visible_region_id_(pool_->InternString("null visible region")),
+      visible_region_outside_display_id_(
+          pool_->InternString("visible region is outside the display")),
+      visible_region_transparent_id_(pool_->InternString(
+          "visible region is covered by the transparent region")),
       occluded_id_(pool_->InternString("occluded")) {}
 
 std::unordered_map<int32_t, VisibilityProperties>
@@ -233,7 +316,8 @@ VisibilityProperties VisibilityComputation::IsLayerVisible(
     bool excludes_composition_state,
     const std::optional<geometry::Rect> crop) {
   VisibilityProperties res;
-  res.is_visible = IsLayerVisibleInIsolation(layer, excludes_composition_state);
+  res.is_visible =
+      IsLayerVisibleInIsolation(layer, excludes_composition_state, crop);
 
   if (res.is_visible) {
     for (const auto opaque_layer_id : opaque_layer_ids) {
@@ -277,7 +361,7 @@ VisibilityProperties VisibilityComputation::IsLayerVisible(
 
   if (!res.is_visible) {
     res.visibility_reasons = GetVisibilityReasons(
-        layer, excludes_composition_state, res.occluding_layers);
+        layer, excludes_composition_state, crop, res.occluding_layers);
   }
 
   return res;
@@ -285,7 +369,8 @@ VisibilityProperties VisibilityComputation::IsLayerVisible(
 
 bool VisibilityComputation::IsLayerVisibleInIsolation(
     const LayerDecoder& layer,
-    bool excludes_composition_state) {
+    bool excludes_composition_state,
+    const std::optional<geometry::Rect>& crop) {
   if (IsHiddenByParent(layer, layers_by_id_) ||
       layer::IsHiddenByPolicy(layer)) {
     return false;
@@ -300,12 +385,21 @@ bool VisibilityComputation::IsLayerVisibleInIsolation(
   if (IsActiveBufferEmpty(layer) && !HasEffects(layer)) {
     return false;
   }
-  return HasVisibleRegion(layer, excludes_composition_state);
+  if (!HasVisibleRegion(layer, excludes_composition_state)) {
+    return false;
+  }
+  if (excludes_composition_state) {
+    return true;
+  }
+  auto rects = GetVisibleRectsOnDisplay(layer, crop);
+  SubtractTransparentRegion(layer, rects);
+  return !rects.empty();
 }
 
 std::vector<StringPool::Id> VisibilityComputation::GetVisibilityReasons(
     const LayerDecoder& layer,
     bool excludes_composition_state,
+    const std::optional<geometry::Rect>& crop,
     const std::vector<int32_t>& occluding_layers) {
   std::vector<StringPool::Id> reasons;
 
@@ -349,6 +443,18 @@ std::vector<StringPool::Id> VisibilityComputation::GetVisibilityReasons(
 
   if (!layer.has_visible_region() && !excludes_composition_state) {
     reasons.push_back(null_visible_region_id_);
+  }
+
+  if (!excludes_composition_state && !HasEmptyVisibleRegion(layer)) {
+    auto rects = GetVisibleRectsOnDisplay(layer, crop);
+    if (rects.empty()) {
+      reasons.push_back(visible_region_outside_display_id_);
+    } else {
+      SubtractTransparentRegion(layer, rects);
+      if (rects.empty()) {
+        reasons.push_back(visible_region_transparent_id_);
+      }
+    }
   }
 
   if (occluding_layers.size() > 0) {
