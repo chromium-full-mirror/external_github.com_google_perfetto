@@ -22,14 +22,15 @@
 #include <cstdint>
 #include <optional>
 #include <utility>
+#include <vector>
 
 #include "perfetto/base/logging.h"
 #include "perfetto/base/time.h"
 #include "perfetto/ext/base/flat_hash_map.h"
 #include "perfetto/ext/base/utils.h"
-#include "src/trace_processor/storage/stats.h"
+#include "src/trace_processor/storage/stats_types.h"
 #include "src/trace_processor/storage/trace_storage.h"
-#include "src/trace_processor/tables/metadata_tables_py.h"
+#include "src/trace_processor/tables/metadata_tables_fwd.h"
 
 namespace perfetto::trace_processor {
 
@@ -40,8 +41,8 @@ namespace perfetto::trace_processor {
 // side index for O(1) row lookup on update.
 class GlobalStatsTracker {
  public:
-  using MachineId = tables::MachineTable::Id;
-  using TraceId = tables::TraceFileTable::Id;
+  using MachineId = tables::MachineTable_Id;
+  using TraceId = tables::TraceFileTable_Id;
 
   explicit GlobalStatsTracker(TraceStorage* storage);
 
@@ -94,7 +95,7 @@ class GlobalStatsTracker {
   // wall-time elapsed (in nanoseconds) since this call. `key` must be a
   // kGlobal stat.
   inline auto TraceExecutionTimeIntoStats(size_t key) {
-    PERFETTO_CHECK(stats::kScopes[key] == stats::Scope::kGlobal);
+    PERFETTO_CHECK(IsGlobalScope(key));
     base::TimeNanos start = base::GetWallTimeNs();
     return base::OnScopeExit([this, key, start] {
       IncrementGlobalStats(key, (base::GetWallTimeNs() - start).count());
@@ -170,21 +171,23 @@ class GlobalStatsTracker {
                            std::optional<MachineId> machine_id,
                            std::optional<TraceId> trace_id) const;
 
-  // Returns the table row for an existing entry, or inserts a new row with
-  // value=0 and registers it in the side index.
-  tables::StatsTable::RowReference FindOrInsertRow(size_t key,
-                                                   std::optional<int> index,
-                                                   const ContextIds& ctx);
+  // Returns the table row id for an existing entry, or inserts a new row
+  // with value=0 and registers it in the side index.
+  tables::StatsTable_Id FindOrInsertRow(size_t key,
+                                        std::optional<int> index,
+                                        const ContextIds& ctx);
+
+  static bool IsGlobalScope(size_t key);
 
   TraceStorage* const storage_;
 
   // Pre-interned constant strings, keyed by stats:: enum values.
-  std::array<StringId, stats::kNumKeys> name_ids_;
-  std::array<StringId, stats::kNumKeys> description_ids_;
+  std::vector<StringId> name_ids_;
+  std::vector<StringId> description_ids_;
   std::array<StringId, stats::kNumSeverities> severity_ids_;
   std::array<StringId, stats::kNumSources> source_ids_;
 
-  base::FlatHashMap<StatsEntry, tables::StatsTable::Id> id_by_entry_;
+  base::FlatHashMap<StatsEntry, tables::StatsTable_Id> id_by_entry_;
 };
 
 }  // namespace perfetto::trace_processor
