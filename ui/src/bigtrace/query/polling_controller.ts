@@ -27,6 +27,62 @@ export interface PollingCallbacks {
   readonly onHistoryChanged: () => void;
 }
 
+// Apply a full GET /query_executions/{uuid} payload to `tab` and `queryStore`.
+export function applyExecutionDetails(
+  tab: BigTraceEditorTab,
+  details: RawQueryExecution,
+): void {
+  if (!tab.queryUuid) return;
+  const status = details.status ?? 'N/A';
+  const isTerminal = TERMINAL_STATUSES.has(status);
+  const startMs = isoToEpochMs(details.startTime);
+  const endMs = isoToEpochMs(details.endTime);
+
+  const exec = queryStore.getOrCreate(tab.queryUuid, {
+    materialized: tab.materialize,
+  });
+  tab.execution = exec;
+  queryStore.update(tab.queryUuid, {
+    status,
+    processedRows: details.processedRows ?? 0,
+    processedTraces: details.processedTraces ?? exec.processedTraces,
+    totalTraces: details.totalTraces ?? exec.totalTraces,
+    buildingFullTable: details.buildingFullTable ?? exec.buildingFullTable,
+    ...(startMs !== undefined ? {startTime: startMs} : {}),
+    ...(isTerminal && endMs !== undefined ? {endTime: endMs} : {}),
+    ...(details.schema !== undefined ? {schema: details.schema} : {}),
+    tableName: details.tableName || undefined,
+    tableLink: details.tableLink || undefined,
+  });
+
+  tab.isLoading = tab.materialize && !isTerminal;
+
+  const durationMs =
+    exec.endTime !== undefined && exec.startTime !== undefined
+      ? exec.endTime - exec.startTime
+      : 0;
+
+  if (!tab.queryResult) {
+    tab.queryResult = makeQueryResponse(tab.editorText, {
+      totalRowCount: exec.processedRows,
+      durationMs,
+      statementWithOutputCount: 1,
+    });
+  } else {
+    if (tab.materialize) {
+      tab.queryResult.totalRowCount = exec.processedRows;
+      tab.queryResult.durationMs = durationMs;
+    }
+    tab.queryResult.lastStatementSql = tab.editorText;
+    tab.queryResult.query = tab.editorText;
+  }
+
+  if (status === 'FAILED') {
+    tab.queryResult.error =
+      details.errorMessage || details.error || 'Query failed';
+  }
+}
+
 // Owns the poll-until-terminal loop for async (materialized) queries.
 export class PollingController {
   constructor(private readonly cb: PollingCallbacks) {}
@@ -112,12 +168,39 @@ export class PollingController {
   // lastProcessedRows) is how a partial result gets asked for.
   private applyStatus(tab: BigTraceEditorTab, status: RawQueryExecution): void {
     if (!tab.queryUuid) return;
+    const prevRows = tab.execution?.processedRows ?? 0;
+    const nextRows = status.processedRows ?? 0;
+    // The first rows mount DataGrid, which fetches them itself, so they are
+    // not new data for the refresh button.
+    if (tab.lastProcessedRows === 0 && nextRows > 0) {
+      tab.lastProcessedRows = nextRows;
+    }
     queryStore.update(tab.queryUuid, {
-      processedRows: status.processedRows ?? 0,
+      processedRows: nextRows,
       processedTraces: status.processedTraces ?? 0,
       totalTraces: status.totalTraces ?? 0,
+      buildingFullTable: status.buildingFullTable === true,
       status: status.status ?? 'N/A',
     });
+    // `:status` only carries counts; fetch execution details on the 0 -> >0
+    // transition so the preview's `tableName` and `schema` are populated
+    // while the full result is being prepared (including if cancelled early).
+    if (prevRows === 0 && nextRows > 0) {
+      const uuid = tab.queryUuid;
+      void tab.queryClient
+        ?.getQueryExecution(uuid, tab.lifecycle.signal)
+        .then((details: RawQueryExecution) => {
+          if (tab.queryUuid !== uuid) return;
+          queryStore.update(uuid, {
+            ...(details.schema !== undefined ? {schema: details.schema} : {}),
+            tableName: details.tableName || undefined,
+            tableLink: details.tableLink || undefined,
+          });
+          this.cb.redraw();
+        })
+        // Best effort: finalize() fetches the details again.
+        .catch(() => {});
+    }
     this.cb.redraw();
   }
 
@@ -141,7 +224,6 @@ export class PollingController {
     tab.isLoading = false;
 
     const isFailed = status.status === 'FAILED';
-    const isSuccess = status.status === 'SUCCESS';
 
     if (isFailed) {
       const startMs = tab.execution?.startTime;
@@ -154,36 +236,32 @@ export class PollingController {
       this.cb.redraw();
     }
 
-    // Fetch full execution details for timing + error message.
-    void tab.queryClient
-      ?.getQueryExecution(tab.queryUuid!, tab.lifecycle.signal)
-      .then((details: RawQueryExecution) => {
-        const endMs = isoToEpochMs(details.endTime);
-        if (tab.queryUuid) {
-          queryStore.update(tab.queryUuid, {
-            ...(endMs !== undefined ? {endTime: endMs} : {}),
-            ...(details.schema !== undefined ? {schema: details.schema} : {}),
-            ...(details.tableName !== undefined
-              ? {tableName: details.tableName}
-              : {}),
-          });
-        }
-        if (isFailed && tab.queryResult !== undefined) {
-          tab.queryResult.error = details.errorMessage || 'Query failed';
-        }
-        this.cb.redraw();
-      })
-      .catch((e: unknown) => {
+    const uuid = tab.queryUuid;
+    if (uuid && tab.queryClient) {
+      try {
+        const details = await tab.queryClient.getQueryExecution(
+          uuid,
+          tab.lifecycle.signal,
+        );
+        if (tab.queryUuid !== uuid) return;
+        applyExecutionDetails(tab, details);
+      } catch (e: unknown) {
         console.error('Failed to fetch query execution details:', e);
+        if (tab.queryUuid !== uuid) return;
         if (isFailed && tab.queryResult !== undefined) {
           tab.queryResult.error = `Failed to fetch error details: ${e instanceof Error ? e.message : String(e)}`;
-          this.cb.redraw();
         }
-      });
-
-    if (isSuccess && tab.dataSource instanceof BigtraceAsyncDataSource) {
-      tab.dataSource.refresh();
-      tab.lastProcessedRows = tab.execution?.processedRows ?? 0;
+      }
     }
+
+    if (
+      tab.dataSource instanceof BigtraceAsyncDataSource &&
+      Boolean(tab.execution?.tableName) &&
+      (tab.execution?.processedRows ?? 0) > 0
+    ) {
+      tab.lastProcessedRows = tab.execution!.processedRows;
+      await tab.dataSource.refresh();
+    }
+    this.cb.redraw();
   }
 }

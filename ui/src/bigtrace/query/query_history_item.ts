@@ -190,7 +190,12 @@ export function renderHistoryItem(
           });
           if (!confirmed) return;
           await queryHistoryStorage.deleteQuery(uuid);
+          queryStore.update(uuid, {
+            tableName: undefined,
+            tableLink: undefined,
+          });
           historyStore.refreshNow();
+          m.redraw();
         },
         icon: Icons.Delete,
         // Red hover so destructive intent reads before click.

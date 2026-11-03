@@ -17,6 +17,7 @@ import {
   BigtraceHttpError,
   BigtraceQueryClient,
   parseQueryResponse,
+  QueryCancelledError,
   QueryNotFoundError,
   toExperimentFilterSpec,
 } from './bigtrace_query_client';
@@ -547,6 +548,17 @@ describe('parseQueryResponse', () => {
     expect(page.rows).toEqual([]);
     expect(page.schema).toEqual([]);
   });
+
+  test('coerces int64 string totalFilteredRows and totalFilteredTraces to numbers', () => {
+    const page = parseQueryResponse({
+      schema: [{name: 'dur', type: 'INT64'}],
+      rows: [{values: ['10']}],
+      totalFilteredRows: '420',
+      totalFilteredTraces: '7',
+    });
+    expect(page.totalFilteredRows).toBe(420);
+    expect(page.totalFilteredTraces).toBe(7);
+  });
 });
 
 describe('BigtraceQueryClient experiments', () => {
@@ -813,5 +825,23 @@ describe('BigtraceQueryClient result tables', () => {
     expect(method).toBe('POST');
     expect(body).toEqual({column_name: 'process_name', search_pattern: 'sys'});
     expect(values).toEqual(['a', 'b']);
+  });
+
+  test('an abort while reading the response body throws QueryCancelledError', async () => {
+    const controller = new AbortController();
+    global.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: () => {
+        controller.abort();
+        return Promise.reject(
+          new DOMException('signal is aborted without reason', 'AbortError'),
+        );
+      },
+    }) as unknown as typeof fetch;
+    const client = new BigtraceQueryClient('http://example');
+    await expect(
+      client.fetchResults('uid-1', 100, 0, controller.signal),
+    ).rejects.toBeInstanceOf(QueryCancelledError);
   });
 });

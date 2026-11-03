@@ -78,6 +78,7 @@ export interface QueryExecution {
   processedRows: number;
   processedTraces: number;
   totalTraces: number;
+  buildingFullTable: boolean;
   error?: string;
   perfettoSql?: string;
   limit?: number;
@@ -85,6 +86,18 @@ export interface QueryExecution {
   tableName?: string;
   tableLink?: string;
   schema?: ReadonlyArray<BigtraceColumnSchema>;
+}
+
+function stripEmptySchema(
+  incoming: Partial<QueryExecution>,
+): Partial<QueryExecution> {
+  if (!('schema' in incoming)) return incoming;
+  if (incoming.schema !== undefined && incoming.schema.length > 0) {
+    return incoming;
+  }
+  const copy = {...incoming};
+  delete copy.schema;
+  return copy;
 }
 
 // Merges live polling with bulk history. Without the rule below, a history
@@ -97,17 +110,18 @@ export class QueryStore {
     uuid: string,
     initialData?: Partial<QueryExecution>,
   ): QueryExecution {
-    if (!this.queries.has(uuid)) {
-      this.queries.set(uuid, {
+    let obj = this.queries.get(uuid);
+    if (obj === undefined) {
+      obj = {
         uuid,
         status: 'UNKNOWN',
         processedRows: 0,
         processedTraces: 0,
         totalTraces: 0,
-        ...initialData,
-      });
+        buildingFullTable: false,
+      };
+      this.queries.set(uuid, obj);
     }
-    const obj = this.queries.get(uuid)!;
     if (initialData) {
       this.mergeInto(obj, initialData);
     }
@@ -118,7 +132,7 @@ export class QueryStore {
   update(uuid: string, updates: Partial<QueryExecution>): void {
     const obj = this.queries.get(uuid);
     if (obj === undefined) return;
-    Object.assign(obj, updates);
+    Object.assign(obj, stripEmptySchema(updates));
   }
 
   getAll(): QueryExecution[] {
@@ -136,12 +150,16 @@ export class QueryStore {
     const incomingIsTerminal =
       incoming.status !== undefined && TERMINAL_STATUSES.has(incoming.status);
     const objIsLive = obj.status === 'IN_PROGRESS' || obj.status === 'UNKNOWN';
-    const rowCountIncreased =
-      (incoming.processedRows ?? 0) >= obj.processedRows;
+    const incomingStage = incoming.buildingFullTable === true;
+    const stageAdvanced = incomingStage && !obj.buildingFullTable;
+    const sameStageAndProgressed =
+      incomingStage === obj.buildingFullTable &&
+      (incoming.processedRows ?? 0) >= obj.processedRows &&
+      (incoming.processedTraces ?? 0) >= obj.processedTraces;
 
-    // Listing endpoint clips perfettoSql/error; never downgrade the held
-    // longer string with a shorter one.
-    const patch: Partial<QueryExecution> = {...incoming};
+    // Listing endpoint clips perfettoSql/error and sends an empty schema; never
+    // downgrade held values with shorter or empty ones.
+    const patch: Partial<QueryExecution> = {...stripEmptySchema(incoming)};
     if (
       patch.perfettoSql !== undefined &&
       obj.perfettoSql !== undefined &&
@@ -150,14 +168,18 @@ export class QueryStore {
       delete patch.perfettoSql;
     }
     if (
-      patch.error !== undefined &&
       obj.error !== undefined &&
-      patch.error.length < obj.error.length
+      (patch.error === undefined || patch.error.length < obj.error.length)
     ) {
       delete patch.error;
     }
 
-    if (!objIsLive || incomingIsTerminal || rowCountIncreased) {
+    if (
+      !objIsLive ||
+      incomingIsTerminal ||
+      stageAdvanced ||
+      sameStageAndProgressed
+    ) {
       Object.assign(obj, patch);
       return;
     }

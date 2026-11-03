@@ -35,6 +35,12 @@ export function formatDurationS(ms: number): string {
 
 export function renderStatusBox(tab: BigTraceEditorTab): m.Children {
   if (!tab.materialize || !tab.queryUuid) return false;
+  if (
+    !tab.isLoading &&
+    (tab.execution === undefined || tab.execution.status === 'UNKNOWN')
+  ) {
+    return false;
+  }
 
   const isTerminal =
     tab.execution?.status !== undefined &&
@@ -62,6 +68,7 @@ export function renderStatusBox(tab: BigTraceEditorTab): m.Children {
   const status = tab.execution?.status ?? 'UNKNOWN';
   const processedTraces = tab.execution?.processedTraces ?? 0;
   const totalTraces = tab.execution?.totalTraces ?? 0;
+  const buildingFullTable = tab.execution?.buildingFullTable === true;
   const durationStr = formatDurationS(durationMs);
 
   const leftGroup = m(
@@ -98,77 +105,97 @@ export function renderStatusBox(tab: BigTraceEditorTab): m.Children {
   ]
     .filter(Boolean)
     .join(' ');
-  const rightGroupContent = m(
-    '.pf-bt-status-bar-group',
-    m(
-      'span.pf-bt-status-bar-stat.pf-bt-status-bar-stat--traces',
-      m('span.pf-bt-status-bar-stat-label', 'Traces:'),
-      m(
-        'span.pf-bt-status-bar-stat-value',
-        {
-          title:
-            `${processedTraces.toLocaleString()} of ` +
-            `${totalTraces.toLocaleString()}` +
-            (!isTerminal
-              ? ' — numerator lags the poll (≤3s); denominator is exact.'
-              : ''),
-        },
-        formatCompact(processedTraces),
-      ),
-      renderInlineProgressBar(processedTraces, totalTraces, !isTerminal),
-    ),
-    m(
-      'span',
-      {className: rowsStatClasses},
-      m('span.pf-bt-status-bar-stat-label', 'Rows:'),
-      m(
-        'span.pf-bt-status-bar-stat-value',
-        {
-          title: `${processedRows.toLocaleString()} of result limit ${tab.limit.toLocaleString()}`,
-        },
-        formatCompact(processedRows),
-      ),
-      renderInlineProgressBar(processedRows, tab.limit, !isTerminal),
-    ),
-  );
-
-  const rightGroup = !isTerminal
+  const rightGroup = isTerminal
     ? m(
-        Tooltip,
-        {
-          trigger: rightGroupContent,
-          position: PopupPosition.Top,
-        },
+        '.pf-bt-status-bar-group',
         m(
-          '.pf-bt-status-bar-progress-tooltip',
-          m('div', `Traces: ${formatCompact(processedTraces)}`),
-          m('div', `Rows: ${formatCompact(processedRows)}`),
+          'span.pf-bt-status-bar-stat.pf-bt-status-bar-stat--traces',
+          m('span.pf-bt-status-bar-stat-label', 'Seen traces:'),
+          m(
+            'span.pf-bt-status-bar-stat-value',
+            {
+              title:
+                totalTraces > 0
+                  ? `${processedTraces.toLocaleString()} of ${totalTraces.toLocaleString()}`
+                  : processedTraces.toLocaleString(),
+            },
+            formatCompact(processedTraces),
+          ),
+        ),
+        m(
+          'span',
+          {className: rowsStatClasses},
+          m('span.pf-bt-status-bar-stat-label', 'Rows:'),
+          m(
+            'span.pf-bt-status-bar-stat-value',
+            {
+              title: `${processedRows.toLocaleString()} of result limit ${tab.limit.toLocaleString()}`,
+            },
+            formatCompact(processedRows),
+          ),
         ),
       )
-    : rightGroupContent;
+    : renderRunningProgress(processedTraces, totalTraces, buildingFullTable);
 
+  return m(Box, {className: 'pf-bt-status-bar'}, leftGroup, rightGroup);
+}
+
+function renderRunningProgress(
+  processedTraces: number,
+  totalTraces: number,
+  buildingFullTable: boolean,
+): m.Children {
+  const stageLabel = buildingFullTable
+    ? 'Building full table…'
+    : 'Preparing preview…';
+  const tooltipText =
+    totalTraces > 0
+      ? `Seen traces: ${formatCompact(processedTraces)} / ${formatCompact(totalTraces)}`
+      : processedTraces > 0
+        ? `Seen traces: ${formatCompact(processedTraces)}`
+        : stageLabel.replace(/…$/, '');
   return m(
-    Box,
+    Tooltip,
     {
-      className: isTerminal
-        ? 'pf-bt-status-bar'
-        : 'pf-bt-status-bar pf-bt-status-bar--running',
+      trigger: m(
+        '.pf-bt-status-bar-group',
+        m(
+          'span.pf-bt-status-bar-progress',
+          m('span.pf-bt-status-bar-stage', stageLabel),
+          renderInlineProgressBar(processedTraces, totalTraces, stageLabel),
+        ),
+      ),
+      position: PopupPosition.Top,
     },
-    leftGroup,
-    rightGroup,
+    m('.pf-bt-status-bar-progress-tooltip', m('div', tooltipText)),
   );
 }
 
 function renderInlineProgressBar(
   done: number,
   total: number,
-  live: boolean,
+  label: string,
 ): m.Children {
-  if (!live) return null;
-  if (total <= 0) return null;
+  if (total <= 0) {
+    return m(
+      'span.pf-bt-inline-progress.pf-bt-inline-progress--indeterminate',
+      {
+        'role': 'progressbar',
+        'aria-label': label,
+      },
+      m('span.pf-bt-inline-progress-fill'),
+    );
+  }
   const pct = Math.max(0, Math.min(100, (done / total) * 100));
   return m(
     'span.pf-bt-inline-progress',
+    {
+      'role': 'progressbar',
+      'aria-label': label,
+      'aria-valuemin': 0,
+      'aria-valuemax': total,
+      'aria-valuenow': Math.max(0, Math.min(done, total)),
+    },
     m('span.pf-bt-inline-progress-fill', {
       style: {width: `${pct}%`},
     }),
@@ -187,6 +214,7 @@ async function refreshAsyncStatus(tab: BigTraceEditorTab): Promise<void> {
         processedRows: status.processedRows ?? 0,
         processedTraces: status.processedTraces ?? 0,
         totalTraces: status.totalTraces ?? 0,
+        buildingFullTable: status.buildingFullTable === true,
         status: status.status ?? 'N/A',
       });
     }

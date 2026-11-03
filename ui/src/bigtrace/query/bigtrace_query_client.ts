@@ -25,8 +25,9 @@ interface QueryResponsePayload {
   queryUuid?: string;
   schema?: BigtraceColumnSchema[];
   rows?: Array<{values: Array<string | null>}>;
-  // Filtered count for scrollbar sizing.
-  totalFilteredRows?: number;
+  // Filtered counts from `:fetch_results` (int64 arrives as string in proto3 JSON).
+  totalFilteredRows?: number | string;
+  totalFilteredTraces?: number | string;
   // Every column the client could project (result + metadata columns), so the
   // picker can offer ones the current projection omits. `:fetch_results`-only.
   availableColumnNames?: string[];
@@ -37,7 +38,7 @@ interface QueryResponsePayload {
 interface TraceMetadataResponsePayload {
   columnNames?: Array<string | null>;
   rows?: Array<{values: Array<string | null>}>;
-  totalFilteredRows?: number;
+  totalFilteredRows?: number | string;
 }
 
 export interface QueryResultPage {
@@ -45,8 +46,9 @@ export interface QueryResultPage {
   readonly columns: ReadonlyArray<string>;
   readonly schema: ReadonlyArray<BigtraceColumnSchema>;
   readonly queryUuid?: string;
-  // Post-filter count from `:fetch_results`; undefined elsewhere.
+  // Post-filter counts from `:fetch_results`; undefined elsewhere.
   readonly totalFilteredRows?: number;
+  readonly totalFilteredTraces?: number;
   // Every projectable column (result + metadata columns); `:fetch_results`-only.
   readonly availableColumnNames?: ReadonlyArray<string>;
 }
@@ -609,7 +611,10 @@ export class BigtraceQueryClient {
       });
     } catch (e) {
       // AbortSignal → DOMException, surface as our typed error.
-      if (e instanceof DOMException && e.name === 'AbortError') {
+      if (
+        init?.signal?.aborted ||
+        (e instanceof DOMException && e.name === 'AbortError')
+      ) {
         throw new QueryCancelledError();
       }
       throw e;
@@ -649,7 +654,17 @@ export class BigtraceQueryClient {
 
   private async requestJson<T>(path: string, init?: RequestInit): Promise<T> {
     const response = await this.request(path, init);
-    return (await response.json()) as T;
+    try {
+      return (await response.json()) as T;
+    } catch (e) {
+      if (
+        init?.signal?.aborted ||
+        (e instanceof DOMException && e.name === 'AbortError')
+      ) {
+        throw new QueryCancelledError();
+      }
+      throw e;
+    }
   }
 }
 
@@ -666,18 +681,29 @@ function experimentFilterToWire(filter: ExperimentFilterSpec) {
   };
 }
 
+function toOptionalCount(
+  value: number | string | undefined,
+): number | undefined {
+  if (value === undefined || value === null) return undefined;
+  const n = Number(value);
+  return Number.isFinite(n) ? n : undefined;
+}
+
 export function parseQueryResponse(
   result: QueryResponsePayload,
 ): QueryResultPage {
   const schema = result.schema ?? [];
   const columns = schema.map((s) => s.name);
+  const totalFilteredRows = toOptionalCount(result.totalFilteredRows);
+  const totalFilteredTraces = toOptionalCount(result.totalFilteredTraces);
 
   if (columns.length === 0) {
     return {
       rows: [],
       columns: [],
       queryUuid: result.queryUuid,
-      totalFilteredRows: result.totalFilteredRows,
+      totalFilteredRows,
+      totalFilteredTraces,
       schema: [],
     };
   }
@@ -693,7 +719,8 @@ export function parseQueryResponse(
     rows,
     columns,
     queryUuid: result.queryUuid,
-    totalFilteredRows: result.totalFilteredRows,
+    totalFilteredRows,
+    totalFilteredTraces,
     schema,
   };
 }

@@ -32,6 +32,7 @@ export interface RawQueryExecution {
   readonly processedRows?: number;
   readonly processedTraces?: number;
   readonly totalTraces?: number;
+  readonly buildingFullTable?: boolean;
   readonly error?: string;
   readonly errorMessage?: string;
   readonly perfettoSql?: string;
@@ -144,13 +145,14 @@ function toQueryExecution(raw: RawQueryExecution): QueryExecution {
     processedRows: raw.processedRows ?? 0,
     processedTraces: raw.processedTraces ?? 0,
     totalTraces: raw.totalTraces ?? 0,
+    buildingFullTable: raw.buildingFullTable === true,
     error: raw.error ?? raw.errorMessage,
     perfettoSql: raw.perfettoSql,
     limit: raw.limit,
     materialized: raw.materialized,
-    tableName: raw.tableName,
-    tableLink: raw.tableLink,
-    schema: raw.schema,
+    tableName: raw.tableName || undefined,
+    tableLink: raw.tableLink || undefined,
+    schema: raw.schema && raw.schema.length > 0 ? raw.schema : undefined,
   };
 }
 
