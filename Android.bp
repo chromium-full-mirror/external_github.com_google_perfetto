@@ -21440,12 +21440,21 @@ python_binary_host {
     main: "tools/gen_tp_table_headers.py",
 }
 
+// GN: //src/trace_processor/plugins/wattson:unittests
+filegroup {
+    name: "perfetto_src_trace_processor_plugins_wattson_unittests",
+    srcs: [
+        "src/trace_processor/plugins/wattson/wattson_soc_model_module_unittest.cc",
+    ],
+}
+
 // GN: //src/trace_processor/plugins/wattson:wattson
 filegroup {
     name: "perfetto_src_trace_processor_plugins_wattson_wattson",
     srcs: [
         "src/trace_processor/plugins/wattson/plugin.cc",
         "src/trace_processor/plugins/wattson/table_function.cc",
+        "src/trace_processor/plugins/wattson/wattson_soc_model_module.cc",
     ],
 }
 
@@ -25238,6 +25247,7 @@ cc_test {
         ":perfetto_src_trace_processor_plugins_utils_functions_utils_functions",
         ":perfetto_src_trace_processor_plugins_video_frame_importer_unittests",
         ":perfetto_src_trace_processor_plugins_video_frame_importer_video_frame_importer",
+        ":perfetto_src_trace_processor_plugins_wattson_unittests",
         ":perfetto_src_trace_processor_plugins_wattson_wattson",
         ":perfetto_src_trace_processor_plugins_window_operator_window_operator",
         ":perfetto_src_trace_processor_plugins_winscope_importer_unittests",

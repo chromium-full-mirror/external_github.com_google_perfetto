@@ -22,10 +22,10 @@
 #include <vector>
 
 #include "perfetto/base/compiler.h"
-#include "src/trace_processor/containers/string_pool.h"
 #include "src/trace_processor/core/dataframe/specs.h"
 #include "src/trace_processor/core/plugin/plugin.h"
 #include "src/trace_processor/core/plugin/registration.h"
+#include "src/trace_processor/importers/proto/proto_importer_module.h"
 #include "src/trace_processor/plugins/wattson/cpu_1d_curves.h"
 #include "src/trace_processor/plugins/wattson/cpu_2d_curves.h"
 #include "src/trace_processor/plugins/wattson/gpu_curves.h"
@@ -34,6 +34,7 @@
 #include "src/trace_processor/plugins/wattson/tables_py.h"
 #include "src/trace_processor/plugins/wattson/tpu_curves.h"
 #include "src/trace_processor/plugins/wattson/wattson.h"
+#include "src/trace_processor/plugins/wattson/wattson_soc_model_module.h"
 #include "src/trace_processor/storage/trace_storage.h"
 #include "src/trace_processor/types/trace_processor_context.h"
 
@@ -63,27 +64,6 @@ DataframeSpec MakeSpec(
   }
   return spec;
 }
-
-struct WattsonExternalTables {
-  explicit WattsonExternalTables(StringPool* pool)
-      : device_info(pool),
-        cpu_cluster(pool),
-        idle_state_map(pool),
-        curves_cpu_1d(pool),
-        curves_cpu_2d(pool),
-        curves_l3(pool),
-        curves_gpu(pool),
-        curves_tpu(pool) {}
-
-  tables::WattsonExternalDeviceInfoTable device_info;
-  tables::WattsonExternalCpuClusterTable cpu_cluster;
-  tables::WattsonExternalIdleStateMapTable idle_state_map;
-  tables::WattsonExternalCurvesCpu1DTable curves_cpu_1d;
-  tables::WattsonExternalCurvesCpu2DTable curves_cpu_2d;
-  tables::WattsonExternalCurvesL3Table curves_l3;
-  tables::WattsonExternalCurvesGpuTable curves_gpu;
-  tables::WattsonExternalCurvesTpuTable curves_tpu;
-};
 
 }  // namespace
 
@@ -117,6 +97,15 @@ class WattsonPlugin : public Plugin<WattsonPlugin> {
     out.push_back({&tables_->curves_tpu.dataframe(),
                    tables::WattsonExternalCurvesTpuTable::Name(),
                    {}});
+  }
+
+  void RegisterProtoImporterModules(
+      ProtoImporterModuleContext* module_context,
+      TraceProcessorContext* trace_context) override {
+    EnsureTables();
+    module_context->modules.emplace_back(
+        std::make_unique<WattsonSocModelModule>(module_context, trace_context,
+                                                tables_.get()));
   }
 
   void RegisterStaticTableFunctions(
