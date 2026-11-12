@@ -13,6 +13,7 @@
 // limitations under the License.
 
 import m from 'mithril';
+import {z} from 'zod';
 import {assertDefined} from '../../base/assert';
 import type {App} from '../../public/app';
 import type {PerfettoPlugin} from '../../public/plugin';
@@ -21,6 +22,7 @@ import {GoogleOAuthClient} from './gdrive/oauth_client';
 import {loadGDriveConfig} from './gdrive_config';
 import {installGDriveSupport} from './install';
 import {alertModal} from '../../widgets/modal';
+import {openFileFromDeeplink} from './open_from_deeplink';
 import {openFileFromSidebar} from './open_from_sidebar';
 
 export interface GDriveClients {
@@ -67,6 +69,16 @@ export default class GoogleDrivePlugin implements PerfettoPlugin {
       },
     });
 
+    const hideAuthDialogSetting = app.settings.register({
+      id: `${GoogleDrivePlugin.id}#HideAuthDialog`,
+      name: 'Google Drive: Hide file authorization dialog',
+      description:
+        'Hide the confirmation dialog and go straight to the Google Drive ' +
+        'file picker when authorizing access to a trace from a deep link.',
+      schema: z.boolean(),
+      defaultValue: false,
+    });
+
     let openFlowInProgress = false;
 
     app.sidebar.addMenuItem({
@@ -93,6 +105,27 @@ export default class GoogleDrivePlugin implements PerfettoPlugin {
           openFlowInProgress = false;
         }
       },
+    });
+
+    // When opening a trace directly from Google drive's UI, it passes the file
+    // id and the resource keys in a hard-coded arg called 'state'. Intercept
+    // this and load the file if these args are passed.
+    const state = app.initialRouteArgs['state'];
+    clientsPromise.then((clients) => {
+      if (typeof state === 'string') {
+        if (!clients) {
+          alertGDriveNotAvailable();
+          return;
+        }
+
+        openFileFromDeeplink(
+          app,
+          clients.oauth,
+          clients.drive,
+          state,
+          hideAuthDialogSetting,
+        );
+      }
     });
   }
 }
