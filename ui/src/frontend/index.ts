@@ -188,7 +188,7 @@ function setupContentSecurityPolicy() {
       'https://*.google-analytics.com',
       'https://www.googletagmanager.com',
       'https://*.googleapis.com',
-      // Icons used by the Google Drive picker.
+      // Icons used by the Google Drive picker and sharing dialog.
       'https://ssl.gstatic.com',
     ],
     'style-src': [`'self'`, `'unsafe-inline'`],
@@ -200,6 +200,9 @@ function setupContentSecurityPolicy() {
       // The Google Drive picker dialog.
       'https://docs.google.com/picker',
       'https://docs.google.com/picker/',
+      // The Google Drive sharing dialog (gapi.drive.share.ShareClient).
+      'https://drive.google.com/sharing/',
+      'https://drive.google.com/drivesharing/',
     ],
   };
   const meta = document.createElement('meta');
