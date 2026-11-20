@@ -9851,6 +9851,7 @@ perfetto_proto_library(
     deps = [
         ":protos_perfetto_common_protos",
         ":protos_perfetto_protovm_protos",
+        ":protos_perfetto_trace_track_event_protos",
     ],
 )
 
@@ -9861,6 +9862,7 @@ perfetto_cc_protozero_library(
         ":protos_perfetto_common_zero",
         ":protos_perfetto_protovm_zero",
         ":protos_perfetto_trace_gpu_protos",
+        ":protos_perfetto_trace_track_event_zero",
     ],
 )
 

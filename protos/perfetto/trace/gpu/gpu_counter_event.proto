@@ -19,6 +19,7 @@ syntax = "proto2";
 package perfetto.protos;
 
 import "protos/perfetto/common/gpu_counter_descriptor.proto";
+import "protos/perfetto/trace/track_event/track_dimension.proto";
 
 // Events for emitting information about GPU counters.
 //
@@ -69,4 +70,8 @@ message InternedGpuCounterDescriptor {
 
   // optional. Identifier for GPU in a multi-gpu device.
   optional int32 gpu_id = 3;
+
+  // Custom dimensions (e.g. a hardware block) of all counters in this
+  // descriptor, in addition to the well-known `gpu` dimension from `gpu_id`.
+  repeated TrackDimension dimensions = 4;
 }

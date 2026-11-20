@@ -10173,6 +10173,7 @@ genrule {
         ":perfetto_protos_perfetto_common_cpp",
         ":perfetto_protos_perfetto_protovm_cpp",
         ":perfetto_protos_perfetto_trace_gpu_cpp",
+        ":perfetto_protos_perfetto_trace_track_event_cpp",
     ],
     tools: [
         "aprotoc",
@@ -10196,6 +10197,7 @@ genrule {
         ":perfetto_protos_perfetto_common_cpp",
         ":perfetto_protos_perfetto_protovm_cpp",
         ":perfetto_protos_perfetto_trace_gpu_cpp",
+        ":perfetto_protos_perfetto_trace_track_event_cpp",
     ],
     tools: [
         "aprotoc",
@@ -10482,6 +10484,7 @@ genrule {
         ":perfetto_protos_perfetto_common_lite",
         ":perfetto_protos_perfetto_protovm_lite",
         ":perfetto_protos_perfetto_trace_gpu_lite",
+        ":perfetto_protos_perfetto_trace_track_event_lite",
     ],
     tools: [
         "aprotoc",
@@ -10504,6 +10507,7 @@ genrule {
         ":perfetto_protos_perfetto_common_lite",
         ":perfetto_protos_perfetto_protovm_lite",
         ":perfetto_protos_perfetto_trace_gpu_lite",
+        ":perfetto_protos_perfetto_trace_track_event_lite",
     ],
     tools: [
         "aprotoc",
@@ -10543,6 +10547,7 @@ genrule {
         ":perfetto_protos_perfetto_common_zero",
         ":perfetto_protos_perfetto_protovm_zero",
         ":perfetto_protos_perfetto_trace_gpu_zero",
+        ":perfetto_protos_perfetto_trace_track_event_zero",
     ],
     tools: [
         "aprotoc",
@@ -10566,6 +10571,7 @@ genrule {
         ":perfetto_protos_perfetto_common_zero",
         ":perfetto_protos_perfetto_protovm_zero",
         ":perfetto_protos_perfetto_trace_gpu_zero",
+        ":perfetto_protos_perfetto_trace_track_event_zero",
     ],
     tools: [
         "aprotoc",
