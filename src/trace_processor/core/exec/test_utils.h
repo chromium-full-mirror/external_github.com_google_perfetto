@@ -19,6 +19,7 @@
 
 #include <algorithm>
 #include <cstdint>
+#include <initializer_list>
 #include <memory>
 #include <optional>
 #include <utility>
@@ -26,6 +27,7 @@
 
 #include "perfetto/base/status.h"
 #include "src/trace_processor/core/common/storage_types.h"
+#include "src/trace_processor/core/dataframe/types.h"
 #include "src/trace_processor/core/exec/breaker.h"
 #include "src/trace_processor/core/exec/column_chunk.h"
 #include "src/trace_processor/core/exec/column_view.h"
@@ -36,9 +38,28 @@
 #include "src/trace_processor/core/exec/run_held.h"
 #include "src/trace_processor/core/exec/selection.h"
 #include "src/trace_processor/core/exec/sink.h"
+#include "src/trace_processor/core/util/arena.h"
 #include "src/trace_processor/core/util/flex_vector.h"
 
 namespace perfetto::trace_processor::core::exec::test {
+
+// Copies `values` into `arena`, the way operators hold lists.
+template <typename T>
+core::ArenaSpan<T> InArena(core::Arena& arena, const std::vector<T>& values) {
+  return arena.CopySpan<T>(values);
+}
+
+// Copies pointers to `columns` into `arena`, the way scans read them. The
+// dataframe which owns the columns must outlive the scan.
+inline core::ArenaSpan<const dataframe::Column*> ColumnsInArena(
+    core::Arena& arena,
+    std::initializer_list<std::shared_ptr<const dataframe::Column>> columns) {
+  std::vector<const dataframe::Column*> pointers;
+  for (const auto& column : columns) {
+    pointers.push_back(column.get());
+  }
+  return InArena(arena, pointers);
+}
 
 // Adds to `out` a copy of `values`, present where `validity` says if not
 // null, in a buffer from `context`: how a source refilling its storage each

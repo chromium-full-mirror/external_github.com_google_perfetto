@@ -29,6 +29,7 @@
 #include "src/trace_processor/core/exec/dataframe_windows.h"
 #include "src/trace_processor/core/exec/operator.h"
 #include "src/trace_processor/core/exec/row_batch.h"
+#include "src/trace_processor/core/util/arena.h"
 #include "src/trace_processor/core/util/range.h"
 
 namespace perfetto::trace_processor::core::exec {
@@ -47,7 +48,7 @@ class SortedSearches {
       // = on a column with SmallValueEq storage.
       kSmallValueEq,
     };
-    std::shared_ptr<const dataframe::Column> column;
+    const dataframe::Column* column = nullptr;
     Kind kind = Kind::kBinarySearch;
     // One of =, <, <=, >, >=. Only = for kSetIdEq and kSmallValueEq.
     Op op{Eq{}};
@@ -56,7 +57,9 @@ class SortedSearches {
   };
 
   // `pool` must outlive the searches.
-  SortedSearches(std::vector<Search> searches, const StringPool* pool);
+  SortedSearches(core::Arena& arena,
+                 core::ArenaSpan<Search> searches,
+                 const StringPool* pool);
   ~SortedSearches();
 
   // The rows of `rows` which every search keeps, for the run's params.
@@ -76,9 +79,9 @@ class SortedSearches {
   Range FindAll(const Context& context, Range rows) const;
   Range FindIdEq(const Context& context, Range rows) const;
 
-  std::vector<Search> searches_;
+  core::ArenaSpan<Search> searches_;
   // Parallel to searches_; used only by binary searches.
-  std::vector<Sorted> sorted_;
+  core::ArenaSpan<Sorted> sorted_;
   const StringPool* pool_;
   // The hottest lookup, id = ?, skips the general search loop.
   bool only_id_eq_ = false;
@@ -95,9 +98,10 @@ class SortedScan final : public Source {
   using Search = SortedSearches::Search;
 
   // `pool` must outlive the scan.
-  SortedScan(std::vector<std::shared_ptr<const dataframe::Column>> columns,
+  SortedScan(core::Arena& arena,
+             core::ArenaSpan<const dataframe::Column*> columns,
              uint32_t row_count,
-             std::vector<Search> searches,
+             core::ArenaSpan<Search> searches,
              const StringPool* pool,
              ReadDirection direction);
   ~SortedScan() override;
@@ -116,7 +120,7 @@ class SortedScan final : public Source {
     bool searched = false;
   };
 
-  std::vector<std::shared_ptr<const dataframe::Column>> columns_;
+  core::ArenaSpan<const dataframe::Column*> columns_;
   uint32_t row_count_;
   SortedSearches searches_;
   ReadDirection direction_;

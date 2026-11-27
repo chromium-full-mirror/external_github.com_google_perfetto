@@ -36,6 +36,7 @@
 #include "src/trace_processor/core/exec/selection.h"
 #include "src/trace_processor/core/exec/test_utils.h"
 #include "src/trace_processor/core/exec/tree_number_nodes.h"
+#include "src/trace_processor/core/util/arena.h"
 #include "src/trace_processor/core/util/bit_vector.h"
 #include "test/gtest_and_gmock.h"
 
@@ -326,6 +327,7 @@ inline constexpr auto kIdTree = dataframe::CreateTypedDataframeSpec(
 // Passing rows keep an implicit id while released rows carry a gathered one,
 // so a consumer retaining both sees the id column change representation.
 TEST(TreeOrderTest, DownThenUpOverAnImplicitIdColumn) {
+  core::Arena arena;
   StringPool pool;
   dataframe::Dataframe df =
       dataframe::Dataframe::CreateFromTypedSpec(kIdTree, &pool);
@@ -338,7 +340,8 @@ TEST(TreeOrderTest, DownThenUpOverAnImplicitIdColumn) {
   df.Finalize();
 
   DataframeScan scan(
-      {df.shared_column(0), df.shared_column(1), df.shared_column(2)},
+      test::ColumnsInArena(arena, {df.shared_column(0), df.shared_column(1),
+                                   df.shared_column(2)}),
       df.row_count(), ReadDirection::kForwards);
   auto ops = Number();
   ops.push_back(std::make_unique<TreeParentFirst>(3, 4));
