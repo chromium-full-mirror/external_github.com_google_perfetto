@@ -64,7 +64,7 @@ KeyPathsState::~KeyPathsState() = default;
 
 }  // namespace
 
-TreeKeyPaths::TreeKeyPaths(TreeKeyPathsSpec spec) : spec_(std::move(spec)) {}
+TreeKeyPaths::TreeKeyPaths(TreeKeyPathsSpec spec) : spec_(spec) {}
 TreeKeyPaths::~TreeKeyPaths() = default;
 
 std::unique_ptr<OperatorState> TreeKeyPaths::MakeState(Context& context) const {

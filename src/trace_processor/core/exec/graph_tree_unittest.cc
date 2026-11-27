@@ -30,6 +30,7 @@
 #include "src/trace_processor/core/exec/sink.h"
 #include "src/trace_processor/core/exec/test_utils.h"
 #include "src/trace_processor/core/exec/tree_number_nodes.h"
+#include "src/trace_processor/core/util/arena.h"
 #include "src/trace_processor/core/util/bit_vector.h"
 #include "test/gtest_and_gmock.h"
 
@@ -137,6 +138,7 @@ class GraphTreeTest : public ::testing::Test {
   // A tree streaming its inputs in, as lowering plans them, and the Context
   // it runs in.
   struct Planned {
+    core::Arena arena;
     std::unique_ptr<Pipelines> pipelines;
     std::unique_ptr<Context> context;
     std::unique_ptr<GraphTree> tree;
@@ -152,7 +154,7 @@ class GraphTreeTest : public ::testing::Test {
     spec.kind = kind;
     spec.nodes = test::AddStream(*planned.pipelines, *nodes_);
     spec.node_column = 0;
-    spec.retained_columns = {0, 1};
+    spec.retained_columns = test::InArena<uint32_t>(planned.arena, {0, 1});
     spec.edges = test::AddStream(*planned.pipelines, *edges_);
     spec.source_column = 0;
     spec.target_column = 1;

@@ -19,7 +19,7 @@
 
 #include <cstdint>
 #include <memory>
-#include <string>
+#include <string_view>
 
 #include "perfetto/base/status.h"
 #include "perfetto/ext/base/type_set.h"
@@ -51,7 +51,7 @@ class AssertType final : public Transform {
     out->reads = {column_};
   }
 
-  AssertType(uint32_t column, AssertTypeTarget type, std::string name);
+  AssertType(uint32_t column, AssertTypeTarget type, std::string_view name);
   ~AssertType() override;
 
   std::unique_ptr<OperatorState> MakeState(Context&) const override;
@@ -75,8 +75,9 @@ class AssertType final : public Transform {
   // One of AssertTypeTarget's types, as a StorageType, which is what a column
   // carries.
   StorageType type_;
-  // Used in the error message when a row disagrees.
-  std::string name_;
+  // Named in the error message when a row has the wrong type. Stored in the
+  // plan's Arena.
+  std::string_view name_;
 };
 
 // Replaces an all-null column with an all-null column of `type`. The planner

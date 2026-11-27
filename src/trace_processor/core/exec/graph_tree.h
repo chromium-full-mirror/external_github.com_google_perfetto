@@ -24,6 +24,7 @@
 #include "perfetto/base/status.h"
 #include "src/trace_processor/core/exec/operator.h"
 #include "src/trace_processor/core/exec/row_batch.h"
+#include "src/trace_processor/core/util/arena.h"
 
 namespace perfetto::trace_processor::core::exec {
 
@@ -36,7 +37,7 @@ struct GraphTreeSpec {
   // The plan pipeline streaming them in (see Pipelines).
   uint32_t nodes = 0;
   uint32_t node_column = 0;
-  std::vector<uint32_t> retained_columns;
+  core::ArenaSpan<uint32_t> retained_columns;
 
   // The edges, from the node in `source_column` to the node in
   // `target_column`, both Int64.

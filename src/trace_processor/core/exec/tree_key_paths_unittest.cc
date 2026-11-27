@@ -31,6 +31,7 @@
 #include "src/trace_processor/core/exec/test_utils.h"
 #include "src/trace_processor/core/exec/tree_number_nodes.h"
 #include "src/trace_processor/core/exec/tree_order.h"
+#include "src/trace_processor/core/util/arena.h"
 #include "src/trace_processor/core/util/bit_vector.h"
 #include "test/gtest_and_gmock.h"
 
@@ -116,11 +117,13 @@ struct Paths {
 Paths KeyPaths(const std::vector<int64_t>& parents,
                const std::vector<int64_t>& keys,
                uint32_t chunk_rows) {
+  core::Arena arena;
   KeyedRows source(parents, keys, chunk_rows);
   std::vector<Pipeline::Step> ops;
   ops.push_back(std::make_unique<TreeNumberNodes>(0, 1));
   ops.push_back(std::make_unique<TreeParentFirst>(3, 4));
-  ops.push_back(std::make_unique<TreeKeyPaths>(TreeKeyPathsSpec{3, 4, {2}}));
+  ops.push_back(std::make_unique<TreeKeyPaths>(
+      TreeKeyPathsSpec{3, 4, test::InArena<uint32_t>(arena, {2})}));
   Pipeline pipeline(source, std::move(ops));
 
   Context context;

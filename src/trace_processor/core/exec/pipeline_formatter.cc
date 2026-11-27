@@ -171,7 +171,7 @@ std::string TypeName(const StorageType& type) {
 }
 
 // Prints step `i` of `program` as an expression.
-std::string StepString(const ExprProgram& program, uint32_t i) {
+std::string StepString(const Compute::Program& program, uint32_t i) {
   using ExprOp = ExprStep::Op;
   const ExprStep& step = program.steps[i];
   auto binary = [&](const char* op) {
@@ -222,7 +222,7 @@ std::string StepString(const ExprProgram& program, uint32_t i) {
              ")";
     case ExprOp::kGlob:
       return "(" + StepString(program, step.a) + " GLOB '" +
-             program.patterns[step.b] + "')";
+             std::string(program.patterns[step.b]) + "')";
     case ExprOp::kIsNull:
       return "(" + StepString(program, step.a) + " IS NULL)";
     case ExprOp::kIsNotNull:
@@ -325,7 +325,7 @@ std::string PipelineFormatter::TransformString(const Transform& transform) {
   if (transform.Is<Compute>()) {
     const auto& compute = static_cast<const Compute&>(transform);
     std::string out;
-    for (const ExprProgram& program : compute.programs_) {
+    for (const Compute::Program& program : compute.programs_) {
       out +=
           (out.empty() ? "" : ", ") +
           StepString(program, static_cast<uint32_t>(program.steps.size() - 1));

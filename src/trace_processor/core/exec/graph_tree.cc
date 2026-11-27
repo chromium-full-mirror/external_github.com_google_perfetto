@@ -160,7 +160,7 @@ struct GraphTree::State : OperatorState {
 
 GraphTree::State::~State() = default;
 
-GraphTree::GraphTree(GraphTreeSpec spec) : spec_(std::move(spec)) {}
+GraphTree::GraphTree(GraphTreeSpec spec) : spec_(spec) {}
 
 GraphTree::~GraphTree() = default;
 
