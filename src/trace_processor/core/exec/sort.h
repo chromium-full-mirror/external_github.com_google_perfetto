@@ -27,12 +27,13 @@
 #include "src/trace_processor/core/exec/operator.h"
 #include "src/trace_processor/core/exec/row_batch.h"
 #include "src/trace_processor/core/exec/sorted_rows.h"
+#include "src/trace_processor/core/util/arena.h"
 
 namespace perfetto::trace_processor::core::exec {
 
 struct SortSpec {
   using Key = SortKey;
-  std::vector<Key> keys;
+  core::ArenaSpan<Key> keys;
   // Holds the strings of the string keys, which there can be only if it is
   // given. Must outlive the sort.
   const StringPool* pool = nullptr;
@@ -54,8 +55,8 @@ class Sort : public Breaker {
     // Rows served in place are read where they are held, sparse or not.
     out->keeps_sparse = in_place_;
   }
-  void SetUnreadColumns(std::vector<bool> unread) override {
-    unread_ = std::move(unread);
+  void SetUnreadColumns(core::ArenaSpan<bool> unread) override {
+    unread_ = unread;
   }
 
   explicit Sort(SortSpec);
@@ -84,7 +85,7 @@ class Sort : public Breaker {
 
   SortSpec spec_;
   // Input columns no later step reads (see Operator::SetUnreadColumns).
-  std::vector<bool> unread_;
+  core::ArenaSpan<bool> unread_;
   bool in_place_ = false;
 };
 

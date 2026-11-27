@@ -35,6 +35,7 @@
 #include "src/trace_processor/core/exec/row_cursor.h"
 #include "src/trace_processor/core/exec/selection.h"
 #include "src/trace_processor/core/exec/test_utils.h"
+#include "src/trace_processor/core/util/arena.h"
 #include "src/trace_processor/core/util/bit_vector.h"
 #include "src/trace_processor/core/util/flex_vector.h"
 #include "test/gtest_and_gmock.h"
@@ -70,17 +71,23 @@ std::vector<std::pair<uint32_t, std::optional<int64_t>>> CursorRows(
   return rows;
 }
 
-std::unique_ptr<Sort> SortInPlace(std::vector<SortSpec::Key> keys,
+std::unique_ptr<Sort> SortInPlace(core::Arena& arena,
+                                  std::vector<SortSpec::Key> keys,
                                   std::vector<bool> unread) {
-  auto sort = std::make_unique<Sort>(SortSpec{std::move(keys)});
-  sort->SetUnreadColumns(std::move(unread));
+  auto sort = std::make_unique<Sort>(SortSpec{test::InArena(arena, keys)});
+  auto span = arena.NewSpan<bool>(static_cast<uint32_t>(unread.size()));
+  for (uint32_t i = 0; i < unread.size(); ++i) {
+    span[i] = unread[i];
+  }
+  sort->SetUnreadColumns(span);
   sort->ServeInPlace();
   return sort;
 }
 
-std::unique_ptr<Sort> SortBy(std::vector<SortSpec::Key> keys,
+std::unique_ptr<Sort> SortBy(core::Arena& arena,
+                             std::vector<SortSpec::Key> keys,
                              const StringPool* pool = nullptr) {
-  return std::make_unique<Sort>(SortSpec{std::move(keys), pool});
+  return std::make_unique<Sort>(SortSpec{test::InArena(arena, keys), pool});
 }
 
 // Runs `sort` over `in`, reading each batch it outputs with `read`.
@@ -93,6 +100,7 @@ void SortOnce(std::unique_ptr<Sort> sort, const RowBatch& in, Read read) {
 }
 
 TEST(SortTest, RunsAgainAfterInvalidKeys) {
+  core::Arena arena;
   std::vector<int64_t> first = {2, 1, 2, 1};
   std::vector<int32_t> narrower = {2, 1, 2, 1};
   std::vector<double> second = {0.5, -1.5, -0.5, 2.5};
@@ -104,7 +112,7 @@ TEST(SortTest, RunsAgainAfterInvalidKeys) {
   in.AddBorrowedColumn(ColumnView::Variants(nullptr));
   in.SetRowCount(4);
   test::BatchesSource source({&in});
-  test::AfterBreaker run(source, {}, SortBy({{1, false}, {2, true}}));
+  test::AfterBreaker run(source, {}, SortBy(arena, {{1, false}, {2, true}}));
   auto ids = [&run](base::Status* status) {
     std::vector<uint32_t> out;
     *status = run.Drain([&](const RowBatch& batch) {
@@ -137,12 +145,13 @@ TEST(SortTest, RunsAgainAfterInvalidKeys) {
 // Rows sorted within one batch held are served where they are held, not
 // copied.
 TEST(SortTest, ServesRowsWhereTheyAreHeld) {
+  core::Arena arena;
   std::vector<int64_t> values = {3, 1, 2};
   RowBatch in;
   in.AddBorrowedColumn(
       ColumnView::Reference(StorageType{Int64{}}, values.data()));
   in.SetRowCount(3);
-  SortOnce(SortBy({{0, false}}), in, [&values](const RowBatch& out) {
+  SortOnce(SortBy(arena, {{0, false}}), in, [&values](const RowBatch& out) {
     EXPECT_EQ(out.column(0).data(), values.data());
     EXPECT_THAT(test::ReadColumn<int64_t>(out, 0), ElementsAre(1, 2, 3));
   });
@@ -151,6 +160,7 @@ TEST(SortTest, ServesRowsWhereTheyAreHeld) {
 // Strings sort by their contents, not by the order the pool interned them,
 // with nulls first ascending and last descending.
 TEST(SortTest, StringsSortByTheirContents) {
+  core::Arena arena;
   StringPool pool;
   std::vector<StringPool::Id> strings = {
       pool.InternString("b"), pool.InternString("c"), pool.InternString("a"),
@@ -167,7 +177,7 @@ TEST(SortTest, StringsSortByTheirContents) {
     if (descending) {
       expected = {1, 0, 4, 2, 3};
     }
-    SortOnce(SortBy({{1, descending}}, &pool), in,
+    SortOnce(SortBy(arena, {{1, descending}}, &pool), in,
              [&expected](const RowBatch& out) {
                EXPECT_EQ(test::ReadColumn<uint32_t>(out, 0), expected);
              });
@@ -175,8 +185,9 @@ TEST(SortTest, StringsSortByTheirContents) {
 }
 
 TEST(SortTest, IdsSortAsTheirValues) {
+  core::Arena arena;
   test::ArraySource source({5, 4, 3});
-  test::AfterBreaker sorted(source, {}, SortBy({{0, true}}));
+  test::AfterBreaker sorted(source, {}, SortBy(arena, {{0, true}}));
   base::Status status;
   EXPECT_THAT(Ids(sorted, &status), ElementsAre(2, 1, 0));
 }
@@ -184,14 +195,15 @@ TEST(SortTest, IdsSortAsTheirValues) {
 // Rows over several batches, served in place, read as they would be copied,
 // on every run.
 TEST(SortTest, ServesRowsInPlaceToACursor) {
+  core::Arena arena;
   constexpr uint32_t kRows = 3 * kMaxBatchRows + 5;
   std::vector<int64_t> values;
   for (uint32_t i = 0; i < kRows; ++i) {
     values.push_back((i * 7919) % 1000);
   }
   test::ArraySource source(values);
-  test::AfterBreaker copied(source, {}, SortBy({{1, true}}));
-  test::AfterBreaker in_place(source, {}, SortInPlace({{1, true}}, {}));
+  test::AfterBreaker copied(source, {}, SortBy(arena, {{1, true}}));
+  test::AfterBreaker in_place(source, {}, SortInPlace(arena, {{1, true}}, {}));
   auto expected = CursorRows(copied);
   ASSERT_EQ(expected.size(), kRows);
   EXPECT_EQ(CursorRows(in_place), expected);
@@ -208,9 +220,10 @@ TEST(SortTest, ServesRowsInPlaceToACursor) {
 
 // A column no later step reads reads back as nulls, in place too.
 TEST(SortTest, ServesUnreadColumnsInPlaceAsNulls) {
+  core::Arena arena;
   test::ArraySource source({3, 1, 2});
   test::AfterBreaker in_place(source, {},
-                              SortInPlace({{0, true}}, {false, true}));
+                              SortInPlace(arena, {{0, true}}, {false, true}));
   auto rows = CursorRows(in_place);
   ASSERT_EQ(rows.size(), 3u);
   EXPECT_EQ(rows[0], std::make_pair(2u, std::optional<int64_t>()));
@@ -277,8 +290,9 @@ class SparseSource final : public Source {
 // A sparse key sorts as its values, nulls first, and a sort serving in place
 // holds the column sparse, so it is read where the scan lent it.
 TEST(SortTest, ServesSparseColumnsInPlace) {
+  core::Arena arena;
   SparseSource source;
-  test::AfterBreaker in_place(source, {}, SortInPlace({{1, false}}, {}));
+  test::AfterBreaker in_place(source, {}, SortInPlace(arena, {{1, false}}, {}));
   RowCursor cursor(in_place.pipeline(), in_place.pipelines());
   std::vector<uint32_t> ids;
   std::vector<std::optional<int64_t>> values;

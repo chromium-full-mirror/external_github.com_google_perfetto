@@ -158,10 +158,11 @@ BENCHMARK(BM_StepsScanBackwards)->Apply(Sizes);
 
 // The same order by a sort.
 void BM_StepsSortDescending(benchmark::State& state) {
+  core::Arena arena;
   Run(
       state, false, ReadDirection::kForwards,
       [] { return std::vector<Pipeline::Step>(); },
-      std::make_unique<Sort>(SortSpec{{{kId, true}}}));
+      std::make_unique<Sort>(SortSpec{arena.CopySpan<SortKey>({{kId, true}})}));
 }
 BENCHMARK(BM_StepsSortDescending)->Apply(Sizes);
 

@@ -37,7 +37,7 @@
 
 namespace perfetto::trace_processor::core::exec {
 
-TopK::TopK(TopKSpec spec) : spec_(std::move(spec)) {}
+TopK::TopK(TopKSpec spec) : spec_(spec) {}
 TopK::~TopK() = default;
 TopK::State::~State() = default;
 

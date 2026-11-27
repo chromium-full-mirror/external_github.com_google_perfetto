@@ -31,7 +31,7 @@
 
 namespace perfetto::trace_processor::core::exec {
 
-GroupedSort::GroupedSort(GroupedSortSpec spec) : spec_(std::move(spec)) {}
+GroupedSort::GroupedSort(GroupedSortSpec spec) : spec_(spec) {}
 GroupedSort::~GroupedSort() = default;
 GroupedSort::State::~State() = default;
 

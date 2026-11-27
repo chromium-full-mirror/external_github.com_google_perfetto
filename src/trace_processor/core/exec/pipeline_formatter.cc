@@ -99,10 +99,10 @@ std::string Columns(base::Span<const uint32_t> positions) {
 }
 
 // The columns a step holding rows does not hold, if any.
-std::string Unread(const std::vector<bool>& unread) {
+std::string Unread(base::Span<const bool> unread) {
   std::vector<uint32_t> positions;
   for (uint32_t c = 0; c < unread.size(); ++c) {
-    if (unread[c]) {
+    if (unread.b[c]) {
       positions.push_back(c);
     }
   }
@@ -118,7 +118,7 @@ std::string Lanes(const IntervalLaneSpec& lanes) {
   return out;
 }
 
-std::string Keys(const std::vector<SortKey>& keys) {
+std::string Keys(base::Span<const SortKey> keys) {
   std::string out;
   for (const SortKey& key : keys) {
     out += (out.empty() ? "" : ", ") + Column(key.column) +
