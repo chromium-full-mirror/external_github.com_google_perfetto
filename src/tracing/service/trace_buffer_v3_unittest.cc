@@ -1699,11 +1699,17 @@ TEST_F(TraceBufferV3Test, SpacePassAccountsInputOnce) {
     ASSERT_EQ(packets.size(), 65u);
     EXPECT_EQ(packets.back().str, "valid-prefix");
     // Accounting an abort before the drain would put its loss on an older
-    // packet, even though the incoming write has not been accepted yet.
-    for (size_t i = 0; i < 64; ++i)
+    // packet, even though the incoming write has not been accepted yet. The
+    // abort comes after "valid-prefix", so that packet has no loss either.
+    for (size_t i = 0; i < 65; ++i)
       EXPECT_EQ(packets[i].loss, 0u);
+
+    WriteChunk(1, 1, 65, {Packet("after-abort")});
+    const auto next_packets = ReadAll();
+    ASSERT_EQ(next_packets.size(), 1u);
+    EXPECT_EQ(next_packets[0].str, "after-abort");
     EXPECT_EQ(
-        packets.back().loss,
+        next_packets[0].loss,
         writer_abort
             ? kLossPresent | protos::pbzero::TracePacket::DATA_LOSS_WRITER_ABORT
             : 0u);

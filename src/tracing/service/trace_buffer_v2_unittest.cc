@@ -781,33 +781,140 @@ TEST_F(TraceBufferV2Test, Fragments_DiscardedOnPacketSizeDropPacket) {
       // Var-int encoded TraceWriterImpl::kPacketSizeDropPacket.
       .AddPacket({0xff, 0xff, 0xff, 0x7f})
       .CopyIntoTraceBuffer();
+  trace_buffer()->BeginRead();
+  uint32_t loss = 0;
+  ASSERT_THAT(ReadPacket(nullptr, &loss),
+              ElementsAre(FakePacketFragment(10, 'a')));
+  EXPECT_EQ(0u, loss);
+  // Chunk 1 tells us 'b' can't complete, so the read drops 'b' now instead of
+  // waiting for chunk 2. That consumes the last fragment of chunk 0.
+  ASSERT_THAT(ReadPacket(), IsEmpty());
+  EXPECT_EQ(1u, trace_buffer()->stats().chunks_read());
+
   CreateChunk(ProducerID(1), WriterID(1), ChunkID(2))
       .AddPacket(10, 'd')
       .CopyIntoTraceBuffer();
   trace_buffer()->BeginRead();
-  ASSERT_THAT(ReadPacket(), ElementsAre(FakePacketFragment(10, 'a')));
-  ASSERT_THAT(ReadPacket(), ElementsAre(FakePacketFragment(10, 'd')));
+  ASSERT_THAT(ReadPacket(nullptr, &loss),
+              ElementsAre(FakePacketFragment(10, 'd')));
+  EXPECT_EQ(static_cast<uint32_t>(DataLossReason::DATA_LOSS_PRESENT |
+                                  DataLossReason::DATA_LOSS_WRITER_ABORT),
+            loss);
   ASSERT_THAT(ReadPacket(), IsEmpty());
 }
 
 TEST_F(TraceBufferV2Test, Fragments_PacketSizeDropPacketIsNotAbiViolation) {
   ResetBuffer(4096);
   // A TraceWriter aborting a packet with kPacketSizeDropPacket is legitimate
-  // behaviour since Android R. Report it via DATA_LOSS_WRITER_ABORT.
+  // behaviour since Android R. 'a' was written before the abort, so only 'b'
+  // reports DATA_LOSS_WRITER_ABORT.
   CreateChunk(ProducerID(1), WriterID(1), ChunkID(0))
       .AddPacket(10, 'a')
       // Var-int encoded TraceWriterImpl::kPacketSizeDropPacket.
       .AddPacket({0xff, 0xff, 0xff, 0x7f})
       .CopyIntoTraceBuffer();
+  CreateChunk(ProducerID(1), WriterID(1), ChunkID(1))
+      .AddPacket(10, 'b')
+      .CopyIntoTraceBuffer();
   trace_buffer()->BeginRead();
   uint32_t loss = 0;
   ASSERT_THAT(ReadPacket(nullptr, &loss),
               ElementsAre(FakePacketFragment(10, 'a')));
+  EXPECT_EQ(0u, loss);
+  ASSERT_THAT(ReadPacket(nullptr, &loss),
+              ElementsAre(FakePacketFragment(10, 'b')));
   EXPECT_EQ(static_cast<uint32_t>(DataLossReason::DATA_LOSS_PRESENT |
                                   DataLossReason::DATA_LOSS_WRITER_ABORT),
             loss);
   ASSERT_THAT(ReadPacket(), IsEmpty());
 
+  EXPECT_EQ(0u, trace_buffer()->stats().abi_violations());
+}
+
+TEST_F(TraceBufferV2Test, Fragments_WriterAbortOnScrapedRecommit) {
+  ResetBuffer(4096);
+  const auto& stats = trace_buffer()->stats();
+  // The scrape leaves out 'x', which is still being written.
+  CreateChunk(ProducerID(1), WriterID(1), ChunkID(0))
+      .AddPacket(10, 'a')
+      .AddPacket(10, 'x')
+      .PadTo(64)
+      .CopyIntoTraceBuffer(/*chunk_complete=*/false);
+  trace_buffer()->BeginRead();
+  uint32_t loss = 0;
+  ASSERT_THAT(ReadPacket(nullptr, &loss),
+              ElementsAre(FakePacketFragment(10, 'a')));
+  EXPECT_EQ(0u, loss);
+  ASSERT_THAT(ReadPacket(), IsEmpty());
+
+  // The writer drops 'x'. The commit adds the abort but no payload, so it
+  // takes the identical-recommit path.
+  CreateChunk(ProducerID(1), WriterID(1), ChunkID(0))
+      .AddPacket(10, 'a')
+      .AddPacket({0xff, 0xff, 0xff, 0x7f})
+      .CopyIntoTraceBuffer();
+  EXPECT_EQ(0u, stats.chunks_rewritten());
+  EXPECT_EQ(0u, stats.chunks_relocated());
+  CreateChunk(ProducerID(1), WriterID(1), ChunkID(1))
+      .AddPacket(10, 'b')
+      .CopyIntoTraceBuffer();
+
+  trace_buffer()->BeginRead();
+  ASSERT_THAT(ReadPacket(nullptr, &loss),
+              ElementsAre(FakePacketFragment(10, 'b')));
+  EXPECT_EQ(static_cast<uint32_t>(DataLossReason::DATA_LOSS_PRESENT |
+                                  DataLossReason::DATA_LOSS_WRITER_ABORT),
+            loss);
+  ASSERT_THAT(ReadPacket(), IsEmpty());
+  EXPECT_EQ(0u, stats.abi_violations());
+}
+
+TEST_F(TraceBufferV2Test, Fragments_WriterAbortAfterScrapedChunkEvicted) {
+  ResetBuffer(4096);
+  // The scrape leaves out 'x', which is still being written. We read 'a'.
+  CreateChunk(ProducerID(1), WriterID(1), ChunkID(0))
+      .AddPacket(20, 'a')
+      .AddPacket(10, 'x')
+      .PadTo(512)
+      .CopyIntoTraceBuffer(/*chunk_complete=*/false);
+  trace_buffer()->BeginRead();
+  ASSERT_THAT(ReadPacket(), ElementsAre(FakePacketFragment(20, 'a')));
+  ASSERT_THAT(ReadPacket(), IsEmpty());
+
+  // Another writer wraps the buffer and evicts the scraped copy of chunk 0.
+  for (ChunkID c = 1; c <= 4; c++) {
+    CreateChunk(ProducerID(2), WriterID(1), ChunkID(c))
+        .AddPacket(1024 - 16, 'y')
+        .CopyIntoTraceBuffer();
+  }
+
+  // The writer drops 'x'. The commit has no new payload, so it is discarded,
+  // but the abort must still reach the next packet.
+  CreateChunk(ProducerID(1), WriterID(1), ChunkID(0))
+      .AddPacket(20, 'a')
+      .AddPacket({0xff, 0xff, 0xff, 0x7f})
+      .CopyIntoTraceBuffer();
+  CreateChunk(ProducerID(1), WriterID(1), ChunkID(1))
+      .AddPacket(10, 'b')
+      .CopyIntoTraceBuffer();
+
+  trace_buffer()->BeginRead();
+  bool found_b = false;
+  uint32_t b_loss = 0;
+  for (;;) {
+    uint32_t loss = 0;
+    auto packet = ReadPacket(nullptr, &loss);
+    if (packet.empty())
+      break;
+    if (packet.size() == 1 && packet[0] == FakePacketFragment(10, 'b')) {
+      found_b = true;
+      b_loss = loss;
+    }
+  }
+  ASSERT_TRUE(found_b);
+  EXPECT_EQ(static_cast<uint32_t>(DataLossReason::DATA_LOSS_PRESENT |
+                                  DataLossReason::DATA_LOSS_WRITER_ABORT),
+            b_loss);
   EXPECT_EQ(0u, trace_buffer()->stats().abi_violations());
 }
 

@@ -72,6 +72,13 @@ constexpr uint8_t kFlagsMask = SharedMemoryABI::ChunkHeader::kFlagsMask;
 constexpr uint8_t kChunkLossBefore = 0x40;
 static_assert((kChunkLossBefore & (kFlagsMask | kChunkIncomplete)) == 0);
 
+// The writer dropped the last packet of this SMB v1 chunk by writing
+// kPacketSizeDropPacket as its size. The reader reports DATA_LOSS_WRITER_ABORT
+// after the chunk's valid packets, so they do not inherit the loss marker.
+constexpr uint8_t kChunkWriterAbortAfter = 0x20;
+static_assert((kChunkWriterAbortAfter &
+               (kFlagsMask | kChunkIncomplete | kChunkLossBefore)) == 0);
+
 // Compares two ChunkID(s) in a wrapping 32-bit ID space.
 // Returns:
 //   -1 if a comes before b in modular (wrapping) order.
@@ -351,6 +358,12 @@ bool ChunkSeqReader::ReadNextPacketInSeqOrder(TracePacket* out_packet) {
         seq_->skip_in_generation = buf_->read_generation_;
         end_reached = true;
       } else {
+        // Report the abort when we erase the chunk, after its valid packets.
+        // Incomplete chunks don't get here in kReadMode, so a scraped chunk
+        // reports it once, after its final commit.
+        if (PERFETTO_UNLIKELY(iter_->flags & kChunkWriterAbortAfter)) {
+          seq_->AddDataLoss(DataLossReason::DATA_LOSS_WRITER_ABORT);
+        }
         // We read all the fragments for the current chunk. Erase it.
         seq_iter_.EraseCurrentChunk();
       }
@@ -537,6 +550,14 @@ ChunkSeqReader::ReassembleFragmentedPacket(TracePacket* out_packet,
       if (frag_iter.chunk_corrupted()) {
         outcome.result = FragReassemblyResult::kDataLoss;
         outcome.reason = DataLossReason::DATA_LOSS_CHUNK_CORRUPTED;
+        break;
+      }
+      // This chunk held only the fragment the writer dropped, so the packet
+      // can't complete. Fail now instead of waiting for a chunk that won't
+      // continue it.
+      if (PERFETTO_UNLIKELY(next_chunk->flags & kChunkWriterAbortAfter)) {
+        outcome.result = FragReassemblyResult::kDataLoss;
+        outcome.reason = DataLossReason::DATA_LOSS_WRITER_ABORT;
         break;
       }
       // This can happen if a chunk in the middle of a sequence is empty. Rare
@@ -920,7 +941,13 @@ void TraceBufferV2::CopyChunkUntrusted(
                          static_cast<const void*>(f.begin),
                          static_cast<const void*>(f.begin + f.size));
   }
-  bool trace_writer_data_drop = frag_iter.trace_writer_data_drop();
+  const bool trace_writer_data_drop = frag_iter.trace_writer_data_drop();
+  // Don't add the abort to the SequenceState here. The reader reports
+  // sequence loss on the next packet it reads, which can be an older packet
+  // still in the buffer.
+  if (PERFETTO_UNLIKELY(trace_writer_data_drop)) {
+    chunk_flags |= kChunkWriterAbortAfter;
+  }
 
   PERFETTO_CHECK(all_frags_size <= src_size);
   const uint16_t all_frags_size_u16 = static_cast<uint16_t>(all_frags_size);
@@ -955,9 +982,6 @@ void TraceBufferV2::CopyChunkUntrusted(
     stats_.set_abi_violations(stats_.abi_violations() + 1);
     return;
   }
-  if (trace_writer_data_drop) {
-    seq->AddDataLoss(DataLossReason::DATA_LOSS_WRITER_ABORT);
-  }
 
   // Don't allow re-commit of chunks that have been consumed already, unless
   // the chunk was evicted while incomplete (scraped) and the new commit has
@@ -979,6 +1003,14 @@ void TraceBufferV2::CopyChunkUntrusted(
       // Older or same chunk with no new data to recover.
       // A scrape can copy a completed chunk before its commit arrives.
       // TBv3 bundling or a standalone read can consume that copy first.
+      //
+      // If that copy was scraped, it was consumed before the writer dropped
+      // its tail. Every packet before the abort is gone, so the next packet
+      // read from |seq| is the right one to report it.
+      if (cmp == 0 && trace_writer_data_drop &&
+          seq->last_chunk_consumed->was_incomplete) {
+        seq->AddDataLoss(DataLossReason::DATA_LOSS_WRITER_ABORT);
+      }
       stats_.set_chunks_discarded(stats_.chunks_discarded() + 1);
       return;
     }
@@ -1074,6 +1106,11 @@ void TraceBufferV2::CopyChunkUntrusted(
       // explicitly commits it.
       if (chunk_complete)
         recommit_chunk->flags &= ~kChunkIncomplete;
+      // A scrape already left out the tail fragment that the writer later
+      // drops, so the final commit can add the abort with identical payload.
+      // Set the flag before the early return below.
+      if (PERFETTO_UNLIKELY(trace_writer_data_drop))
+        recommit_chunk->flags |= kChunkWriterAbortAfter;
       if (all_frags_size == recommit_chunk->payload_size) {
         TRACE_BUFFER_V2_DLOG("  skipping recommit of identical chunk");
         return;
