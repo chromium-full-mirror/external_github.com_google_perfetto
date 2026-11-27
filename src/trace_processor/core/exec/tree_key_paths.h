@@ -54,7 +54,6 @@ class TreeKeyPaths final : public Transform {
   }
 
   explicit TreeKeyPaths(TreeKeyPathsSpec);
-  ~TreeKeyPaths() override;
 
   std::unique_ptr<OperatorState> MakeState(Context&) const override;
   bool Process(RowBatch&, OperatorState&) const override;

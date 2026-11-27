@@ -131,8 +131,6 @@ IntervalFillGaps::IntervalFillGaps(core::Arena& arena,
   }
 }
 
-IntervalFillGaps::~IntervalFillGaps() = default;
-
 std::unique_ptr<OperatorState> IntervalFillGaps::MakeState(
     Context& context) const {
   return std::make_unique<State>(spec_, context);

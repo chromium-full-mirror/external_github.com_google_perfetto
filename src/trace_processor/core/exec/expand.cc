@@ -100,7 +100,6 @@ void ExpandColumn(const ColumnView& view,
 
 Expand::Expand(core::ArenaSpan<uint32_t> columns) : columns_(columns) {}
 
-Expand::~Expand() = default;
 Expand::State::~State() = default;
 
 void Expand::DescribeColumns(StepColumns* out) const {

@@ -77,7 +77,7 @@ struct IntervalFillGapsSpec {
 //
 // Background rows in the same lane may not overlap. Fillers never have zero
 // duration. Output rows are in no particular order.
-class IntervalFillGaps : public Operator {
+class IntervalFillGaps final : public Operator {
  public:
   static constexpr char kType = 0;
   const void* type() const override { return &kType; }
@@ -90,7 +90,6 @@ class IntervalFillGaps : public Operator {
   }
 
   IntervalFillGaps(core::Arena&, IntervalFillGapsSpec);
-  ~IntervalFillGaps() override;
 
   std::unique_ptr<OperatorState> MakeState(Context&) const override;
   OpResult Execute(const RowBatch&, RowBatch&, OperatorState&) const override;

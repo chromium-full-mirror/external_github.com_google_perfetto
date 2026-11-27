@@ -162,8 +162,6 @@ GraphTree::State::~State() = default;
 
 GraphTree::GraphTree(GraphTreeSpec spec) : spec_(spec) {}
 
-GraphTree::~GraphTree() = default;
-
 std::unique_ptr<OperatorState> GraphTree::MakeState(Context& context) const {
   return std::make_unique<State>(context, spec_);
 }

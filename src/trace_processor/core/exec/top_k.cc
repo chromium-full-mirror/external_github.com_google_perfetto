@@ -38,7 +38,6 @@
 namespace perfetto::trace_processor::core::exec {
 
 TopK::TopK(TopKSpec spec) : spec_(spec) {}
-TopK::~TopK() = default;
 TopK::State::~State() = default;
 
 std::unique_ptr<Breaker::State> TopK::CreateState() const {

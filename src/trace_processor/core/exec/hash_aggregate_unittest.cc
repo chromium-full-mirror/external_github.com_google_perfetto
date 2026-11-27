@@ -51,8 +51,8 @@ Columns Aggregate(core::Arena& arena,
                   std::vector<const RowBatch*> batches,
                   base::Status* status = nullptr) {
   test::BatchesSource source(std::move(batches));
-  test::AfterBreaker run(source, {},
-                         std::make_unique<HashAggregate>(arena, spec));
+  test::AfterBreaker run(arena, source, {},
+                         arena.New<HashAggregate>(arena, spec));
   Columns out;
   base::Status ended = run.Drain([&](const RowBatch& batch) {
     EXPECT_TRUE(out.empty());

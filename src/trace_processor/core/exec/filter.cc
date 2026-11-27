@@ -395,7 +395,6 @@ Filter::Filter(core::ArenaSpan<Condition> conditions, const StringPool* pool)
   }
 }
 
-Filter::~Filter() = default;
 Filter::State::~State() = default;
 
 std::unique_ptr<OperatorState> Filter::MakeState(Context& context) const {

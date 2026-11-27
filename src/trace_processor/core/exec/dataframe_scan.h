@@ -48,7 +48,7 @@ namespace perfetto::trace_processor::core::exec {
 // working if the table is replaced, as long as whoever built the scan keeps the
 // columns alive. The dataframe must be finalized before its columns are
 // captured.
-class DataframeScan : public Source {
+class DataframeScan final : public Source {
  public:
   static constexpr char kType = 0;
   const void* type() const override { return &kType; }
@@ -56,7 +56,6 @@ class DataframeScan : public Source {
   DataframeScan(core::ArenaSpan<const dataframe::Column*> columns,
                 uint32_t row_count,
                 ReadDirection direction);
-  ~DataframeScan() override;
 
   std::unique_ptr<OperatorState> MakeState(Context& context) const override;
   bool GetData(RowBatch& out, OperatorState& state) const override;

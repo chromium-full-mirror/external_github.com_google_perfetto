@@ -820,7 +820,6 @@ Compute::Compute(core::Arena& arena,
     }
   }
 }
-Compute::~Compute() = default;
 
 std::unique_ptr<OperatorState> Compute::MakeState(Context& context) const {
   auto state = std::make_unique<ComputeState>();

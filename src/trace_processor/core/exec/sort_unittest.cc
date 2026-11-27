@@ -71,10 +71,10 @@ std::vector<std::pair<uint32_t, std::optional<int64_t>>> CursorRows(
   return rows;
 }
 
-std::unique_ptr<Sort> SortInPlace(core::Arena& arena,
-                                  std::vector<SortSpec::Key> keys,
-                                  std::vector<bool> unread) {
-  auto sort = std::make_unique<Sort>(SortSpec{test::InArena(arena, keys)});
+const Sort* SortInPlace(core::Arena& arena,
+                        std::vector<SortSpec::Key> keys,
+                        std::vector<bool> unread) {
+  Sort* sort = arena.New<Sort>(SortSpec{test::InArena(arena, keys)});
   auto span = arena.NewSpan<bool>(static_cast<uint32_t>(unread.size()));
   for (uint32_t i = 0; i < unread.size(); ++i) {
     span[i] = unread[i];
@@ -84,17 +84,20 @@ std::unique_ptr<Sort> SortInPlace(core::Arena& arena,
   return sort;
 }
 
-std::unique_ptr<Sort> SortBy(core::Arena& arena,
-                             std::vector<SortSpec::Key> keys,
-                             const StringPool* pool = nullptr) {
-  return std::make_unique<Sort>(SortSpec{test::InArena(arena, keys), pool});
+const Sort* SortBy(core::Arena& arena,
+                   std::vector<SortSpec::Key> keys,
+                   const StringPool* pool = nullptr) {
+  return arena.New<Sort>(SortSpec{test::InArena(arena, keys), pool});
 }
 
 // Runs `sort` over `in`, reading each batch it outputs with `read`.
 template <typename Read>
-void SortOnce(std::unique_ptr<Sort> sort, const RowBatch& in, Read read) {
+void SortOnce(core::Arena& arena,
+              const Sort* sort,
+              const RowBatch& in,
+              Read read) {
   test::BatchesSource source({&in});
-  test::AfterBreaker run(source, {}, std::move(sort));
+  test::AfterBreaker run(arena, source, {}, sort);
   base::Status status = run.Drain(read);
   EXPECT_TRUE(status.ok()) << status.message();
 }
@@ -112,7 +115,8 @@ TEST(SortTest, RunsAgainAfterInvalidKeys) {
   in.AddBorrowedColumn(ColumnView::Variants(nullptr));
   in.SetRowCount(4);
   test::BatchesSource source({&in});
-  test::AfterBreaker run(source, {}, SortBy(arena, {{1, false}, {2, true}}));
+  test::AfterBreaker run(arena, source, {},
+                         SortBy(arena, {{1, false}, {2, true}}));
   auto ids = [&run](base::Status* status) {
     std::vector<uint32_t> out;
     *status = run.Drain([&](const RowBatch& batch) {
@@ -151,10 +155,11 @@ TEST(SortTest, ServesRowsWhereTheyAreHeld) {
   in.AddBorrowedColumn(
       ColumnView::Reference(StorageType{Int64{}}, values.data()));
   in.SetRowCount(3);
-  SortOnce(SortBy(arena, {{0, false}}), in, [&values](const RowBatch& out) {
-    EXPECT_EQ(out.column(0).data(), values.data());
-    EXPECT_THAT(test::ReadColumn<int64_t>(out, 0), ElementsAre(1, 2, 3));
-  });
+  SortOnce(
+      arena, SortBy(arena, {{0, false}}), in, [&values](const RowBatch& out) {
+        EXPECT_EQ(out.column(0).data(), values.data());
+        EXPECT_THAT(test::ReadColumn<int64_t>(out, 0), ElementsAre(1, 2, 3));
+      });
 }
 
 // Strings sort by their contents, not by the order the pool interned them,
@@ -177,7 +182,7 @@ TEST(SortTest, StringsSortByTheirContents) {
     if (descending) {
       expected = {1, 0, 4, 2, 3};
     }
-    SortOnce(SortBy(arena, {{1, descending}}, &pool), in,
+    SortOnce(arena, SortBy(arena, {{1, descending}}, &pool), in,
              [&expected](const RowBatch& out) {
                EXPECT_EQ(test::ReadColumn<uint32_t>(out, 0), expected);
              });
@@ -186,8 +191,8 @@ TEST(SortTest, StringsSortByTheirContents) {
 
 TEST(SortTest, IdsSortAsTheirValues) {
   core::Arena arena;
-  test::ArraySource source({5, 4, 3});
-  test::AfterBreaker sorted(source, {}, SortBy(arena, {{0, true}}));
+  test::ArraySource source(arena, {5, 4, 3});
+  test::AfterBreaker sorted(arena, source, {}, SortBy(arena, {{0, true}}));
   base::Status status;
   EXPECT_THAT(Ids(sorted, &status), ElementsAre(2, 1, 0));
 }
@@ -201,9 +206,10 @@ TEST(SortTest, ServesRowsInPlaceToACursor) {
   for (uint32_t i = 0; i < kRows; ++i) {
     values.push_back((i * 7919) % 1000);
   }
-  test::ArraySource source(values);
-  test::AfterBreaker copied(source, {}, SortBy(arena, {{1, true}}));
-  test::AfterBreaker in_place(source, {}, SortInPlace(arena, {{1, true}}, {}));
+  test::ArraySource source(arena, values);
+  test::AfterBreaker copied(arena, source, {}, SortBy(arena, {{1, true}}));
+  test::AfterBreaker in_place(arena, source, {},
+                              SortInPlace(arena, {{1, true}}, {}));
   auto expected = CursorRows(copied);
   ASSERT_EQ(expected.size(), kRows);
   EXPECT_EQ(CursorRows(in_place), expected);
@@ -221,8 +227,8 @@ TEST(SortTest, ServesRowsInPlaceToACursor) {
 // A column no later step reads reads back as nulls, in place too.
 TEST(SortTest, ServesUnreadColumnsInPlaceAsNulls) {
   core::Arena arena;
-  test::ArraySource source({3, 1, 2});
-  test::AfterBreaker in_place(source, {},
+  test::ArraySource source(arena, {3, 1, 2});
+  test::AfterBreaker in_place(arena, source, {},
                               SortInPlace(arena, {{0, true}}, {false, true}));
   auto rows = CursorRows(in_place);
   ASSERT_EQ(rows.size(), 3u);
@@ -292,7 +298,8 @@ class SparseSource final : public Source {
 TEST(SortTest, ServesSparseColumnsInPlace) {
   core::Arena arena;
   SparseSource source;
-  test::AfterBreaker in_place(source, {}, SortInPlace(arena, {{1, false}}, {}));
+  test::AfterBreaker in_place(arena, source, {},
+                              SortInPlace(arena, {{1, false}}, {}));
   RowCursor cursor(in_place.pipeline(), in_place.pipelines());
   std::vector<uint32_t> ids;
   std::vector<std::optional<int64_t>> values;

@@ -120,11 +120,11 @@ Paths KeyPaths(const std::vector<int64_t>& parents,
   core::Arena arena;
   KeyedRows source(parents, keys, chunk_rows);
   std::vector<Pipeline::Step> ops;
-  ops.push_back(std::make_unique<TreeNumberNodes>(0, 1));
-  ops.push_back(std::make_unique<TreeParentFirst>(3, 4));
-  ops.push_back(std::make_unique<TreeKeyPaths>(
+  ops.push_back(arena.New<TreeNumberNodes>(0u, 1u));
+  ops.push_back(arena.New<TreeParentFirst>(3u, 4u));
+  ops.push_back(arena.New<TreeKeyPaths>(
       TreeKeyPathsSpec{3, 4, test::InArena<uint32_t>(arena, {2})}));
-  Pipeline pipeline(source, std::move(ops));
+  Pipeline pipeline(arena, source, ops);
 
   Context context;
   std::unique_ptr<OperatorState> state = pipeline.MakeState(context);

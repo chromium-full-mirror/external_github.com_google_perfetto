@@ -69,7 +69,6 @@ class Filter final : public Transform {
 
   // `pool` holds the strings of the columns, and must outlive the filter.
   Filter(core::ArenaSpan<Condition> conditions, const StringPool* pool);
-  ~Filter() override;
 
   std::unique_ptr<OperatorState> MakeState(Context&) const override;
   bool Process(RowBatch& batch, OperatorState& state) const override;

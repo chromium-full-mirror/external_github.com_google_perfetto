@@ -72,13 +72,12 @@ struct GraphTreeSpec {
 // for a root, then two Uint32 columns numbering the rows out from zero, of the
 // row and of its parent's row, kNoNode for a root. The numbers are what the
 // tree operators read, as though from TreeNumberNodes.
-class GraphTree : public Source {
+class GraphTree final : public Source {
  public:
   static constexpr char kType = 0;
   const void* type() const override { return &kType; }
 
   explicit GraphTree(GraphTreeSpec);
-  ~GraphTree() override;
 
   std::unique_ptr<OperatorState> MakeState(Context&) const override;
   bool GetData(RowBatch&, OperatorState&) const override;

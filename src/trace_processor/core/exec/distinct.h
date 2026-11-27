@@ -51,7 +51,6 @@ class Distinct final : public Transform {
   static constexpr uint32_t kMaxColumns = 64;
 
   explicit Distinct(core::ArenaSpan<uint32_t> columns);
-  ~Distinct() override;
 
   std::unique_ptr<OperatorState> MakeState(Context&) const override;
   bool Process(RowBatch&, OperatorState&) const override;

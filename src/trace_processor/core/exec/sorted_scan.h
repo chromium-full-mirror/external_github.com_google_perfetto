@@ -60,7 +60,6 @@ class SortedSearches {
   SortedSearches(core::Arena& arena,
                  core::ArenaSpan<Search> searches,
                  const StringPool* pool);
-  ~SortedSearches();
 
   // The rows of `rows` which every search keeps, for the run's params.
   Range Find(const Context& context, Range rows) const;
@@ -104,7 +103,6 @@ class SortedScan final : public Source {
              core::ArenaSpan<Search> searches,
              const StringPool* pool,
              ReadDirection direction);
-  ~SortedScan() override;
 
   std::unique_ptr<OperatorState> MakeState(Context& context) const override;
   bool GetData(RowBatch& out, OperatorState& state) const override;

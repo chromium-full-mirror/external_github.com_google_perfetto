@@ -88,7 +88,6 @@ IntervalFlatten::IntervalFlatten(core::Arena& arena, IntervalFlattenSpec spec)
   }
 }
 
-IntervalFlatten::~IntervalFlatten() = default;
 IntervalFlatten::State::~State() = default;
 
 std::unique_ptr<OperatorState> IntervalFlatten::MakeState(

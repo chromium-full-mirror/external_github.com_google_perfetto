@@ -118,8 +118,8 @@ class ArraySource final : public Source {
   static constexpr char kType = 0;
   const void* type() const override { return &kType; }
 
-  explicit ArraySource(std::vector<int64_t> values)
-      : values_(std::move(values)) {}
+  ArraySource(core::Arena& arena, const std::vector<int64_t>& values)
+      : values_(InArena(arena, values)) {}
 
   std::unique_ptr<OperatorState> MakeState(Context&) const override {
     return std::make_unique<State>();
@@ -138,7 +138,7 @@ class ArraySource final : public Source {
     out.Reset();
     out.AddBorrowedColumn(ColumnView::Sequence(nullptr, s.emitted));
     out.AddBorrowedColumn(ColumnView::Reference(
-        StorageType{Int64{}}, values_.data(), nullptr, s.emitted));
+        StorageType{Int64{}}, values_.begin(), nullptr, s.emitted));
     out.SetRowCount(count);
     s.emitted += count;
     return true;
@@ -149,7 +149,7 @@ class ArraySource final : public Source {
     uint32_t emitted = 0;
   };
 
-  std::vector<int64_t> values_;
+  core::ArenaSpan<int64_t> values_;
 };
 
 // Runs `transform` on a copy of `in` made in `out`, as a pipeline hands each
@@ -208,9 +208,11 @@ class FailingSource final : public Source {
 
 // Adds a pipeline streaming `input`, which must outlive `pipelines`, as a
 // plan adds a side pipeline, and returns its id.
-inline uint32_t AddStream(Pipelines& pipelines, const Source& input) {
+inline uint32_t AddStream(core::Arena& arena,
+                          Pipelines& pipelines,
+                          const Source& input) {
   return pipelines.Add(
-      nullptr, std::make_unique<Pipeline>(input, std::vector<Pipeline::Step>()),
+      arena.New<Pipeline>(arena, input, base::Span<const Pipeline::Step>{}),
       nullptr);
 }
 
@@ -250,16 +252,15 @@ class BatchesSource final : public Source {
 // starts with the source serving what it built. As pipitdb's after_breaker.
 class AfterBreaker {
  public:
-  AfterBreaker(const Source& input,
-               std::vector<Pipeline::Step> before,
-               std::unique_ptr<Breaker> breaker,
-               std::vector<Pipeline::Step> after = {}) {
-    const Breaker& served = *breaker;
-    uint32_t id = pipelines_.Add(
-        nullptr, std::make_unique<Pipeline>(input, std::move(before)),
-        std::move(breaker));
-    served_ = std::make_unique<Served>(id, served);
-    pipeline_ = std::make_unique<Pipeline>(*served_, std::move(after));
+  AfterBreaker(core::Arena& arena,
+               const Source& input,
+               base::Span<const Pipeline::Step> before,
+               const Breaker* breaker,
+               base::Span<const Pipeline::Step> after = {}) {
+    uint32_t id =
+        pipelines_.Add(arena.New<Pipeline>(arena, input, before), breaker);
+    const Served* served = arena.New<Served>(id, *breaker);
+    pipeline_ = arena.New<Pipeline>(arena, *served, after);
     context_.SetPipelines(&pipelines_);
   }
 
@@ -280,8 +281,7 @@ class AfterBreaker {
 
  private:
   Pipelines pipelines_;
-  std::unique_ptr<Served> served_;
-  std::unique_ptr<Pipeline> pipeline_;
+  const Pipeline* pipeline_;
   Context context_;
 };
 
@@ -289,10 +289,11 @@ class AfterBreaker {
 // Run() is called, as a plan runs it. For benchmarks.
 class BreakerRun {
  public:
-  BreakerRun(const std::vector<RowBatch>& batches,
-             std::unique_ptr<Breaker> breaker)
+  BreakerRun(core::Arena& arena,
+             const std::vector<RowBatch>& batches,
+             const Breaker* breaker)
       : source_(Pointers(batches)),
-        run_(source_, {}, std::move(breaker)),
+        run_(arena, source_, {}, breaker),
         state_(run_.pipeline().MakeState(run_.context())) {}
 
   // How many rows it output.

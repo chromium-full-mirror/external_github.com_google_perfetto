@@ -52,7 +52,7 @@ struct GroupedSortSpec {
 // Group numbers come from a hash table. A counting sort by group number then
 // brings each group's rows together. Rows are copied once, in the final
 // order.
-class GroupedSort : public Breaker {
+class GroupedSort final : public Breaker {
  public:
   static constexpr char kType = 0;
   const void* type() const override { return &kType; }
@@ -69,7 +69,6 @@ class GroupedSort : public Breaker {
   }
 
   explicit GroupedSort(GroupedSortSpec);
-  ~GroupedSort() override;
 
  private:
   friend class PipelineFormatter;

@@ -35,7 +35,6 @@ DataframeScan::DataframeScan(core::ArenaSpan<const dataframe::Column*> columns,
                              ReadDirection direction)
     : columns_(columns), row_count_(row_count), direction_(direction) {}
 
-DataframeScan::~DataframeScan() = default;
 DataframeScan::State::~State() = default;
 
 std::unique_ptr<OperatorState> DataframeScan::MakeState(Context&) const {

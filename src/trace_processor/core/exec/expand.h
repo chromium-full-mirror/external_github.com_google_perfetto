@@ -37,7 +37,6 @@ class Expand final : public Transform {
   const void* type() const override { return &kType; }
 
   explicit Expand(core::ArenaSpan<uint32_t> columns);
-  ~Expand() override;
 
   void DescribeColumns(StepColumns* out) const override;
   std::unique_ptr<OperatorState> MakeState(Context&) const override;

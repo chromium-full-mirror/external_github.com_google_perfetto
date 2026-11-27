@@ -188,12 +188,10 @@ bool Accumulate(const TreeAccumulateSpec& spec,
 
 TreeAccumulateUp::TreeAccumulateUp(core::Arena& arena, TreeAccumulateSpec spec)
     : spec_(spec), functions_(MakeAggregateFunctions(arena, spec.aggregates)) {}
-TreeAccumulateUp::~TreeAccumulateUp() = default;
 
 TreeAccumulateDown::TreeAccumulateDown(core::Arena& arena,
                                        TreeAccumulateSpec spec)
     : spec_(spec), functions_(MakeAggregateFunctions(arena, spec.aggregates)) {}
-TreeAccumulateDown::~TreeAccumulateDown() = default;
 
 std::unique_ptr<OperatorState> TreeAccumulateUp::MakeState(
     Context& context) const {

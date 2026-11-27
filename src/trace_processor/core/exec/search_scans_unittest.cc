@@ -223,8 +223,8 @@ class SearchScansDiffTest : public ::testing::Test {
   // Lowers a filter-only logical plan to a scan and a Filter, reading the
   // scan in `direction`. An index is only read forwards.
   struct ExecPlan {
-    std::unique_ptr<Source> scan;
-    std::unique_ptr<Pipeline> pipeline;
+    const Source* scan;
+    const Pipeline* pipeline;
     std::vector<std::optional<ParamCaster<Values>>> casters;
   };
   // Params are cast for the type a column is read as: an id is a Uint32.
@@ -305,22 +305,22 @@ class SearchScansDiffTest : public ::testing::Test {
     uint32_t rows = empty ? 0 : df_->row_count();
     if (empty) {
       // Provably empty, whatever else the plan does.
-      out.scan = std::make_unique<DataframeScan>(columns, 0u, direction);
+      out.scan = arena.New<DataframeScan>(columns, 0u, direction);
     } else if (index) {
       if (direction == ReadDirection::kBackwards) {
         return std::nullopt;
       }
       // Searches of sorted columns cut the index's rows to their range.
-      out.scan = std::make_unique<IndexScan>(
-          arena, columns, *index, test::InArena(arena, equalities),
-          test::InArena(arena, searches), &pool_);
+      out.scan = arena.New<IndexScan>(arena, columns, *index,
+                                      test::InArena(arena, equalities),
+                                      test::InArena(arena, searches), &pool_);
       ++index_scans_;
     } else if (searches.empty()) {
-      out.scan = std::make_unique<DataframeScan>(columns, rows, direction);
+      out.scan = arena.New<DataframeScan>(columns, rows, direction);
     } else {
-      out.scan = std::make_unique<SortedScan>(arena, columns, rows,
-                                              test::InArena(arena, searches),
-                                              &pool_, direction);
+      out.scan = arena.New<SortedScan>(arena, columns, rows,
+                                       test::InArena(arena, searches), &pool_,
+                                       direction);
       ++sorted_scans_;
     }
     std::vector<Pipeline::Step> steps;
@@ -334,14 +334,13 @@ class SearchScansDiffTest : public ::testing::Test {
       }
     }
     if (!sparse.empty()) {
-      steps.emplace_back(
-          std::make_unique<Expand>(test::InArena(arena, sparse)));
+      steps.emplace_back(arena.New<Expand>(test::InArena(arena, sparse)));
     }
     if (!conditions.empty()) {
       steps.emplace_back(
-          std::make_unique<Filter>(test::InArena(arena, conditions), &pool_));
+          arena.New<Filter>(test::InArena(arena, conditions), &pool_));
     }
-    out.pipeline = std::make_unique<Pipeline>(*out.scan, std::move(steps));
+    out.pipeline = arena.New<Pipeline>(arena, *out.scan, steps);
     return out;
   }
 

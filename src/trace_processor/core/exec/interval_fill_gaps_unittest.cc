@@ -121,7 +121,9 @@ class Fill {
  public:
   Fill(const Source& background, bool keyed)
       : op_(arena_,
-            MakeSpec(arena_, test::AddStream(pipelines_, background), keyed)) {
+            MakeSpec(arena_,
+                     test::AddStream(arena_, pipelines_, background),
+                     keyed)) {
     context_.SetPipelines(&pipelines_);
   }
 

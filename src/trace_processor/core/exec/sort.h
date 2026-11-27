@@ -41,7 +41,7 @@ struct SortSpec {
 
 // Stably sorts rows by their keys. Nulls sort as in SQLite: first ascending,
 // last descending. Strings sort by their contents.
-class Sort : public Breaker {
+class Sort final : public Breaker {
  public:
   static constexpr char kType = 0;
   const void* type() const override { return &kType; }
@@ -60,7 +60,6 @@ class Sort : public Breaker {
   }
 
   explicit Sort(SortSpec);
-  ~Sort() override;
 
   // Serves the rows in place, rather than copied into batches, unless they
   // were packed (see RowStore::Place). Only for a plan's last step, read by

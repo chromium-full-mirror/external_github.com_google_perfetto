@@ -174,12 +174,13 @@ class ExecLookup {
     Op op;
   };
 
-  ExecLookup(std::unique_ptr<Source> scan,
-             std::vector<Pipeline::Step> steps,
+  ExecLookup(core::Arena& arena,
+             const Source* scan,
+             const std::vector<Pipeline::Step>& steps,
              const std::vector<Condition>& conditions,
              const StringPool* pool)
-      : scan_(std::move(scan)),
-        pipeline_(*scan_, std::move(steps)),
+      : scan_(scan),
+        pipeline_(arena, *scan_, steps),
         // A lone source is read directly, as lowering would.
         cursor_(pipeline_.steps().empty()
                     ? *scan_
@@ -206,7 +207,7 @@ class ExecLookup {
   RowCursor& cursor() { return cursor_; }
 
  private:
-  std::unique_ptr<Source> scan_;
+  const Source* scan_;
   Pipeline pipeline_;
   RowCursor cursor_;
   std::vector<FetcherValue> values_;
@@ -253,12 +254,12 @@ BENCHMARK(BM_ExtractArg_Interpreter);
 void RunExtractArg(benchmark::State& state,
                    core::Arena& arena,
                    const Args& a,
-                   std::unique_ptr<Source> scan) {
+                   const Source* scan) {
   std::vector<Pipeline::Step> steps;
-  steps.emplace_back(std::make_unique<Filter>(
+  steps.emplace_back(arena.New<Filter>(
       arena.CopySpan<Filter::Condition>({{1, Eq{}, 1}}), &a.pool));
-  ExecLookup lookup(std::move(scan), std::move(steps),
-                    {{Uint32{}, Eq{}}, {String{}, Eq{}}}, &a.pool);
+  ExecLookup lookup(arena, scan, steps, {{Uint32{}, Eq{}}, {String{}, Eq{}}},
+                    &a.pool);
   uint32_t i = 0;
   uint32_t found = 0;
   for (auto _ : state) {
@@ -277,7 +278,7 @@ void BM_ExtractArg_SortedScan(benchmark::State& state) {
   const Args a;
   RunExtractArg(
       state, arena, a,
-      std::make_unique<SortedScan>(
+      arena.New<SortedScan>(
           arena, Columns(arena, *a.df, {kArgId, kKey}), a.df->row_count(),
           arena.CopySpan<SortedScan::Search>(
               {{&a.df->column(kArgSetId), SortedScan::Search::Kind::kSetIdEq,
@@ -333,7 +334,7 @@ std::vector<Pipeline::Step> SparseExpands(core::Arena& arena, uint32_t k) {
   }
   std::vector<Pipeline::Step> steps;
   if (!sparse.empty()) {
-    steps.push_back(std::make_unique<Expand>(arena.CopySpan<uint32_t>(sparse)));
+    steps.push_back(arena.New<Expand>(arena.CopySpan<uint32_t>(sparse)));
   }
   return steps;
 }
@@ -377,7 +378,8 @@ void BM_IdEq_SortedScan(benchmark::State& state) {
     cols.push_back(&w.df->column(c));
   }
   ExecLookup lookup(
-      std::make_unique<SortedScan>(
+      arena,
+      arena.New<SortedScan>(
           arena, arena.CopySpan<const dataframe::Column*>(cols),
           w.df->row_count(),
           arena.CopySpan<SortedScan::Search>(
@@ -424,7 +426,8 @@ void BM_IndexEq_IndexScan(benchmark::State& state) {
   core::Arena arena;
   const Slices s;
   ExecLookup lookup(
-      std::make_unique<IndexScan>(
+      arena,
+      arena.New<IndexScan>(
           arena, Columns(arena, *s.df, {kSliceId}), s.df->indexes()[0],
           arena.CopySpan<IndexScan::Equality>({{&s.df->column(kTrack), 0}}),
           core::ArenaSpan<SortedSearches::Search>(), &s.pool),
@@ -474,7 +477,8 @@ void BM_TsRange_SortedScan(benchmark::State& state) {
   const Slices s;
   auto span = static_cast<uint32_t>(state.range(0));
   ExecLookup lookup(
-      std::make_unique<SortedScan>(
+      arena,
+      arena.New<SortedScan>(
           arena, Columns(arena, *s.df, {kDur}), s.df->row_count(),
           arena.CopySpan<SortedScan::Search>(
               {{&s.df->column(kTs), SortedScan::Search::Kind::kBinarySearch,

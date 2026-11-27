@@ -35,8 +35,6 @@ Distinct::Distinct(core::ArenaSpan<uint32_t> columns) : columns_(columns) {
   PERFETTO_CHECK(!columns_.empty() && columns_.size() <= kMaxColumns);
 }
 
-Distinct::~Distinct() = default;
-
 Distinct::State::~State() = default;
 
 std::unique_ptr<OperatorState> Distinct::MakeState(Context&) const {

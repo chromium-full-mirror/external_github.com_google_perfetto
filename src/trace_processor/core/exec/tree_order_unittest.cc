@@ -178,9 +178,9 @@ Output Drain(const Source& source) {
   return Drain(&run);
 }
 
-std::vector<Pipeline::Step> Number() {
+std::vector<Pipeline::Step> Number(core::Arena& arena) {
   std::vector<Pipeline::Step> ops;
-  ops.push_back(std::make_unique<TreeNumberNodes>(0, 1));
+  ops.push_back(arena.New<TreeNumberNodes>(0u, 1u));
   return ops;
 }
 
@@ -200,16 +200,18 @@ constexpr Direction kDirections[] = {Direction::kChildFirst,
 
 // Numbers the nodes of `input`, then orders the rows, and drains them.
 Output NumberAndOrder(const Source& input, Direction direction) {
+  core::Arena arena;
   if (direction == Direction::kChildFirst) {
     // Child first holds every row, so ends the pipeline numbering them.
-    test::AfterBreaker run(input, Number(),
-                           std::make_unique<TreeChildFirst>(3u, 4u));
+    std::vector<Pipeline::Step> number = Number(arena);
+    test::AfterBreaker run(arena, input, number,
+                           arena.New<TreeChildFirst>(3u, 4u));
     Execution execution(run.pipeline(), run.pipelines());
     return Drain(&execution);
   }
-  std::vector<Pipeline::Step> ops = Number();
-  ops.push_back(std::make_unique<TreeParentFirst>(3, 4));
-  Pipeline order(input, std::move(ops));
+  std::vector<Pipeline::Step> ops = Number(arena);
+  ops.push_back(arena.New<TreeParentFirst>(3u, 4u));
+  Pipeline order(arena, input, ops);
   return Drain(order);
 }
 
@@ -343,10 +345,9 @@ TEST(TreeOrderTest, DownThenUpOverAnImplicitIdColumn) {
       test::ColumnsInArena(arena, {df.shared_column(0), df.shared_column(1),
                                    df.shared_column(2)}),
       df.row_count(), ReadDirection::kForwards);
-  auto ops = Number();
-  ops.push_back(std::make_unique<TreeParentFirst>(3, 4));
-  test::AfterBreaker order(scan, std::move(ops),
-                           std::make_unique<TreeChildFirst>(3u, 4u));
+  auto ops = Number(arena);
+  ops.push_back(arena.New<TreeParentFirst>(3u, 4u));
+  test::AfterBreaker order(arena, scan, ops, arena.New<TreeChildFirst>(3u, 4u));
 
   Execution run(order.pipeline(), order.pipelines());
   std::vector<uint32_t> ids;

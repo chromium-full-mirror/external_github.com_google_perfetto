@@ -63,7 +63,6 @@ class IndexScan final : public Source {
             core::ArenaSpan<Equality> equalities,
             core::ArenaSpan<SortedSearches::Search> searches,
             const StringPool* pool);
-  ~IndexScan() override;
 
   std::unique_ptr<OperatorState> MakeState(Context& context) const override;
   bool GetData(RowBatch& out, OperatorState& state) const override;

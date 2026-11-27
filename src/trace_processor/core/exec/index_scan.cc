@@ -73,7 +73,6 @@ IndexScan::IndexScan(core::Arena& arena,
   }
 }
 
-IndexScan::~IndexScan() = default;
 IndexScan::State::~State() = default;
 
 std::unique_ptr<OperatorState> IndexScan::MakeState(Context& context) const {

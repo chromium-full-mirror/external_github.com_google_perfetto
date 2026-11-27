@@ -223,8 +223,6 @@ IntervalIntersect::IntervalIntersect(
   PERFETTO_CHECK(operands_.size() >= 2);
 }
 
-IntervalIntersect::~IntervalIntersect() = default;
-
 std::unique_ptr<OperatorState> IntervalIntersect::MakeState(
     Context& context) const {
   auto state = std::make_unique<IntersectState>();

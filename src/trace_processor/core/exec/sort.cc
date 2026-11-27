@@ -27,7 +27,6 @@
 namespace perfetto::trace_processor::core::exec {
 
 Sort::Sort(SortSpec spec) : spec_(spec) {}
-Sort::~Sort() = default;
 Sort::State::~State() = default;
 
 std::unique_ptr<Breaker::State> Sort::CreateState() const {

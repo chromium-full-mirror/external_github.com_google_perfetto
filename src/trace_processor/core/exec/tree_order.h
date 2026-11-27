@@ -49,7 +49,7 @@ namespace perfetto::trace_processor::core::exec {
 //
 // The input columns are node numbers, which TreeNumberNodes produces. No
 // column is added.
-class TreeChildFirst : public Breaker {
+class TreeChildFirst final : public Breaker {
  public:
   static constexpr char kType = 0;
   const void* type() const override { return &kType; }
@@ -61,7 +61,6 @@ class TreeChildFirst : public Breaker {
   }
 
   TreeChildFirst(uint32_t node_column, uint32_t parent_column);
-  ~TreeChildFirst() override;
 
  private:
   friend class PipelineFormatter;
@@ -116,7 +115,7 @@ class TreeChildFirst : public Breaker {
 // The order is parent first and nothing more: not a pre-order, so a fold
 // down keeps a value per node rather than a path. The input columns are node
 // numbers, which TreeNumberNodes produces. No column is added.
-class TreeParentFirst : public Operator {
+class TreeParentFirst final : public Operator {
  public:
   static constexpr char kType = 0;
   const void* type() const override { return &kType; }
@@ -128,7 +127,6 @@ class TreeParentFirst : public Operator {
   }
 
   TreeParentFirst(uint32_t node_column, uint32_t parent_column);
-  ~TreeParentFirst() override;
 
   std::unique_ptr<OperatorState> MakeState(Context&) const override;
   OpResult Execute(const RowBatch& in,

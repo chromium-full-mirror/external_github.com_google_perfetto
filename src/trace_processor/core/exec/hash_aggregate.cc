@@ -89,7 +89,6 @@ HashAggregate::HashAggregate(core::Arena& arena, HashAggregateSpec spec)
     state_words_ += functions_[a]->state_words();
   }
 }
-HashAggregate::~HashAggregate() = default;
 HashAggregate::State::~State() = default;
 
 std::unique_ptr<Breaker::State> HashAggregate::CreateState() const {

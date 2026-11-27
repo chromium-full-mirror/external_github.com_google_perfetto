@@ -44,8 +44,10 @@ struct Output {
 };
 
 // Runs `grouped_sort` over `source`, as a plan runs it.
-Output Drain(const Source& source, std::unique_ptr<GroupedSort> grouped_sort) {
-  test::AfterBreaker run(source, {}, std::move(grouped_sort));
+Output Drain(core::Arena& arena,
+             const Source& source,
+             const GroupedSort* grouped_sort) {
+  test::AfterBreaker run(arena, source, {}, grouped_sort);
   Output out;
   out.status = run.Drain([&out](const RowBatch& batch) {
     for (uint32_t id : test::ReadColumn<uint32_t>(batch, 0)) {
@@ -59,10 +61,10 @@ Output Drain(const Source& source, std::unique_ptr<GroupedSort> grouped_sort) {
 }
 
 // A GroupedSort that groups by `column` and sorts each group by `keys`.
-std::unique_ptr<GroupedSort> GroupOn(core::Arena& arena,
-                                     uint32_t column,
-                                     std::vector<SortKey> keys = {}) {
-  return std::make_unique<GroupedSort>(GroupedSortSpec{
+const GroupedSort* GroupOn(core::Arena& arena,
+                           uint32_t column,
+                           std::vector<SortKey> keys = {}) {
+  return arena.New<GroupedSort>(GroupedSortSpec{
       test::InArena<uint32_t>(arena, {column}), test::InArena(arena, keys)});
 }
 
@@ -70,13 +72,13 @@ std::unique_ptr<GroupedSort> GroupOn(core::Arena& arena,
 // their input order, or are sorted by the keys if there are any.
 TEST(GroupedSortTest, GroupsInOrderOfFirstRow) {
   core::Arena arena;
-  test::ArraySource source({7, 3, 7, 5, 3, 7});
-  Output out = Drain(source, GroupOn(arena, 1));
+  test::ArraySource source(arena, {7, 3, 7, 5, 3, 7});
+  Output out = Drain(arena, source, GroupOn(arena, 1));
   ASSERT_TRUE(out.status.ok()) << out.status.message();
   EXPECT_THAT(out.ids, ElementsAre(0, 2, 5, 1, 4, 3));
   EXPECT_THAT(out.groups, ElementsAre(0, 0, 0, 1, 1, 2));
 
-  out = Drain(source, GroupOn(arena, 1, {{0, /*descending=*/true}}));
+  out = Drain(arena, source, GroupOn(arena, 1, {{0, /*descending=*/true}}));
   ASSERT_TRUE(out.status.ok()) << out.status.message();
   EXPECT_THAT(out.ids, ElementsAre(5, 2, 0, 4, 1, 3));
   EXPECT_THAT(out.groups, ElementsAre(0, 0, 0, 1, 1, 2));

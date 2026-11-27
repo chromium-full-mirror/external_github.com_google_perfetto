@@ -44,7 +44,7 @@ namespace perfetto::trace_processor::core::exec {
 // of no width is a point: it meets an interval holding the instant it sits at
 // and another point at the same instant. A row holding no timestamp or no
 // duration has no bounds to meet anything over, so it covers nothing.
-class IntervalIntersect : public Source {
+class IntervalIntersect final : public Source {
  public:
   static constexpr char kType = 0;
   const void* type() const override { return &kType; }
@@ -53,7 +53,6 @@ class IntervalIntersect : public Source {
   // are compared pairwise, in order. Every operand's source must outlive
   // this. Two are the fewest which can have a region in common.
   explicit IntervalIntersect(core::ArenaSpan<CollectedInputSpec>);
-  ~IntervalIntersect() override;
 
   std::unique_ptr<OperatorState> MakeState(Context&) const override;
   bool GetData(RowBatch&, OperatorState&) const override;

@@ -48,7 +48,7 @@ struct HashAggregateSpec {
 // Input rows are not stored. Each row is added to its group's aggregate
 // state, which is stored next to the group's keys. Memory use grows with the
 // number of groups, not the number of rows.
-class HashAggregate : public Breaker {
+class HashAggregate final : public Breaker {
  public:
   static constexpr char kType = 0;
   const void* type() const override { return &kType; }
@@ -61,7 +61,6 @@ class HashAggregate : public Breaker {
   }
 
   HashAggregate(core::Arena&, HashAggregateSpec);
-  ~HashAggregate() override;
 
  private:
   friend class PipelineFormatter;

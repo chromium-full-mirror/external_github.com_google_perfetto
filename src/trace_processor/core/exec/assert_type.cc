@@ -180,8 +180,6 @@ AssertType::AssertType(uint32_t column,
                        std::string_view name)
     : column_(column), type_(type.Upcast<StorageType>()), name_(name) {}
 
-AssertType::~AssertType() = default;
-
 AssertType::State::~State() = default;
 
 std::unique_ptr<OperatorState> AssertType::MakeState(Context& context) const {
@@ -322,7 +320,6 @@ bool AssertType::Process(RowBatch& batch, OperatorState& state) const {
 NullColumn::NullColumn(uint32_t column, StorageType type)
     : column_(column), type_(type) {}
 
-NullColumn::~NullColumn() = default;
 NullColumn::State::~State() = default;
 
 std::unique_ptr<OperatorState> NullColumn::MakeState(Context& context) const {

@@ -49,7 +49,7 @@ struct IntervalFlattenSpec {
 // Aggregates are computed with the shared functions a batch of segments at a
 // time: each interval's state is kept in a slot of its own, combined into a
 // tree over the segments it was live in, so any function works.
-class IntervalFlatten : public Operator {
+class IntervalFlatten final : public Operator {
  public:
   static constexpr char kType = 0;
   const void* type() const override { return &kType; }
@@ -63,7 +63,6 @@ class IntervalFlatten : public Operator {
   }
 
   IntervalFlatten(core::Arena&, IntervalFlattenSpec);
-  ~IntervalFlatten() override;
 
   std::unique_ptr<OperatorState> MakeState(Context&) const override;
   OpResult Execute(const RowBatch&, RowBatch&, OperatorState&) const override;

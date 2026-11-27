@@ -152,7 +152,7 @@ Table Intersect(core::Arena& arena,
   std::vector<CollectedInputSpec> specs;
   for (const Operand& operand : operands) {
     specs.push_back(operand.spec);
-    specs.back().pipeline = test::AddStream(pipelines, *operand.source);
+    specs.back().pipeline = test::AddStream(arena, pipelines, *operand.source);
   }
   IntervalIntersect intersect(test::InArena(arena, specs));
   Context context;

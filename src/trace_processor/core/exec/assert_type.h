@@ -52,7 +52,6 @@ class AssertType final : public Transform {
   }
 
   AssertType(uint32_t column, AssertTypeTarget type, std::string_view name);
-  ~AssertType() override;
 
   std::unique_ptr<OperatorState> MakeState(Context&) const override;
   bool Process(RowBatch& batch, OperatorState&) const override;
@@ -92,7 +91,6 @@ class NullColumn final : public Transform {
   }
 
   NullColumn(uint32_t column, StorageType type);
-  ~NullColumn() override;
 
   std::unique_ptr<OperatorState> MakeState(Context&) const override;
   bool Process(RowBatch& batch, OperatorState&) const override;

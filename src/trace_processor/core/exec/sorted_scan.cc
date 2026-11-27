@@ -68,8 +68,6 @@ SortedSearches::SortedSearches(core::Arena& arena,
                 searches_[0].op.Is<Eq>();
 }
 
-SortedSearches::~SortedSearches() = default;
-
 Range SortedSearches::Find(const Context& context, Range rows) const {
   return only_id_eq_ ? FindIdEq(context, rows) : FindAll(context, rows);
 }
@@ -85,7 +83,6 @@ SortedScan::SortedScan(core::Arena& arena,
       searches_(arena, searches, pool),
       direction_(direction) {}
 
-SortedScan::~SortedScan() = default;
 SortedScan::State::~State() = default;
 
 std::unique_ptr<OperatorState> SortedScan::MakeState(Context& context) const {

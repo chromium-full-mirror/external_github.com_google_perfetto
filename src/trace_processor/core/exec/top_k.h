@@ -50,7 +50,7 @@ struct TopKSpec {
 // order to rows held afresh. The last of those becomes the cutoff: from then
 // on, rows which do not come before it are dropped as they arrive, so on most
 // inputs pruning soon becomes rare.
-class TopK : public Breaker {
+class TopK final : public Breaker {
  public:
   static constexpr char kType = 0;
   const void* type() const override { return &kType; }
@@ -65,7 +65,6 @@ class TopK : public Breaker {
   }
 
   explicit TopK(TopKSpec);
-  ~TopK() override;
 
  private:
   friend class PipelineFormatter;
