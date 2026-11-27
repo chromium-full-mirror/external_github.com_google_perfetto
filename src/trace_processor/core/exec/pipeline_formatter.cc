@@ -127,7 +127,7 @@ std::string Keys(base::Span<const SortKey> keys) {
   return out;
 }
 
-std::string Aggregates(const std::vector<AggregateCall>& calls) {
+std::string Aggregates(base::Span<const AggregateCall> calls) {
   std::string out;
   for (const AggregateCall& call : calls) {
     std::string arg = Column(call.column);
@@ -286,7 +286,7 @@ std::string PipelineFormatter::SourceString(const Source& source) {
   if (source.Is<IntervalIntersect>()) {
     const auto& isect = static_cast<const IntervalIntersect&>(source);
     std::string out = "IntervalIntersect(";
-    for (size_t i = 0; i < isect.operands_.size(); ++i) {
+    for (uint32_t i = 0; i < isect.operands_.size(); ++i) {
       out += (i == 0 ? "" : "; ") + Lanes(isect.operands_[i].lanes);
     }
     return out + ")";

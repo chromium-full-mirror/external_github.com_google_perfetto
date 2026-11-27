@@ -108,7 +108,7 @@ void Run(benchmark::State& state,
                      df.row_count(), direction);
   // The scan lends parent_id sparse: lay it out before the steps, as lowering
   // would.
-  std::vector<Pipeline::Step> steps = make();
+  std::vector<Pipeline::Step> steps = make(arena);
   if (!steps.empty() || breaker) {
     steps.insert(steps.begin(),
                  std::make_unique<Expand>(arena.CopySpan<uint32_t>({kParent})));
@@ -144,7 +144,7 @@ void Sizes(benchmark::internal::Benchmark* b) {
 void BM_StepsScanOnly(benchmark::State& state) {
   Run(
       state, false, ReadDirection::kForwards,
-      [] { return std::vector<Pipeline::Step>(); }, nullptr);
+      [](core::Arena&) { return std::vector<Pipeline::Step>(); }, nullptr);
 }
 BENCHMARK(BM_StepsScanOnly)->Apply(Sizes);
 
@@ -152,7 +152,7 @@ BENCHMARK(BM_StepsScanOnly)->Apply(Sizes);
 void BM_StepsScanBackwards(benchmark::State& state) {
   Run(
       state, false, ReadDirection::kBackwards,
-      [] { return std::vector<Pipeline::Step>(); }, nullptr);
+      [](core::Arena&) { return std::vector<Pipeline::Step>(); }, nullptr);
 }
 BENCHMARK(BM_StepsScanBackwards)->Apply(Sizes);
 
@@ -161,7 +161,7 @@ void BM_StepsSortDescending(benchmark::State& state) {
   core::Arena arena;
   Run(
       state, false, ReadDirection::kForwards,
-      [] { return std::vector<Pipeline::Step>(); },
+      [](core::Arena&) { return std::vector<Pipeline::Step>(); },
       std::make_unique<Sort>(SortSpec{arena.CopySpan<SortKey>({{kId, true}})}));
 }
 BENCHMARK(BM_StepsSortDescending)->Apply(Sizes);
@@ -169,7 +169,7 @@ BENCHMARK(BM_StepsSortDescending)->Apply(Sizes);
 void BM_StepsTreeNumberNodes(benchmark::State& state) {
   Run(
       state, false, ReadDirection::kForwards,
-      [] {
+      [](core::Arena&) {
         std::vector<Pipeline::Step> steps;
         steps.push_back(std::make_unique<TreeNumberNodes>(kId, kParent));
         return steps;
@@ -181,11 +181,14 @@ BENCHMARK(BM_StepsTreeNumberNodes)->Apply(Sizes);
 void BM_StepsTreeAccumulateDown(benchmark::State& state) {
   Run(
       state, false, ReadDirection::kForwards,
-      [] {
+      [](core::Arena& arena) {
         std::vector<Pipeline::Step> steps;
         steps.push_back(std::make_unique<TreeNumberNodes>(kId, kParent));
-        steps.push_back(std::make_unique<TreeAccumulateDown>(TreeAccumulateSpec{
-            kNode, kParentNode, {{AggregateCall::Function::kSum, kValue}}}));
+        steps.push_back(std::make_unique<TreeAccumulateDown>(
+            arena, TreeAccumulateSpec{
+                       kNode, kParentNode,
+                       arena.CopySpan<AggregateCall>(
+                           {{AggregateCall::Function::kSum, kValue}})}));
         return steps;
       },
       nullptr);
@@ -195,11 +198,14 @@ BENCHMARK(BM_StepsTreeAccumulateDown)->Apply(Sizes);
 void BM_StepsTreeAccumulateUp(benchmark::State& state) {
   Run(
       state, true, ReadDirection::kForwards,
-      [] {
+      [](core::Arena& arena) {
         std::vector<Pipeline::Step> steps;
         steps.push_back(std::make_unique<TreeNumberNodes>(kId, kParent));
-        steps.push_back(std::make_unique<TreeAccumulateUp>(TreeAccumulateSpec{
-            kNode, kParentNode, {{AggregateCall::Function::kSum, kValue}}}));
+        steps.push_back(std::make_unique<TreeAccumulateUp>(
+            arena, TreeAccumulateSpec{
+                       kNode, kParentNode,
+                       arena.CopySpan<AggregateCall>(
+                           {{AggregateCall::Function::kSum, kValue}})}));
         return steps;
       },
       nullptr);
@@ -209,7 +215,7 @@ BENCHMARK(BM_StepsTreeAccumulateUp)->Apply(Sizes);
 void BM_StepsTreeKeyPaths(benchmark::State& state) {
   Run(
       state, false, ReadDirection::kForwards,
-      [] {
+      [](core::Arena&) {
         std::vector<Pipeline::Step> steps;
         steps.push_back(std::make_unique<TreeNumberNodes>(kId, kParent));
         steps.push_back(std::make_unique<TreeKeyPaths>(
@@ -224,7 +230,7 @@ BENCHMARK(BM_StepsTreeKeyPaths)->Apply(Sizes);
 void BM_StepsAssertTypeAsIs(benchmark::State& state) {
   Run(
       state, false, ReadDirection::kForwards,
-      [] {
+      [](core::Arena&) {
         std::vector<Pipeline::Step> steps;
         steps.push_back(std::make_unique<AssertType>(
             kValue, AssertTypeTarget(Int64{}), "value"));
@@ -238,7 +244,7 @@ BENCHMARK(BM_StepsAssertTypeAsIs)->Apply(Sizes);
 void BM_StepsAssertTypeWiden(benchmark::State& state) {
   Run(
       state, false, ReadDirection::kForwards,
-      [] {
+      [](core::Arena&) {
         std::vector<Pipeline::Step> steps;
         steps.push_back(std::make_unique<AssertType>(
             kSmall, AssertTypeTarget(Int64{}), "small"));

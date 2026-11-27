@@ -28,6 +28,7 @@
 #include "src/trace_processor/core/exec/group_table.h"
 #include "src/trace_processor/core/exec/row_batch.h"
 #include "src/trace_processor/core/exec/run_held.h"
+#include "src/trace_processor/core/util/arena.h"
 #include "src/trace_processor/core/util/bit_vector.h"
 #include "src/trace_processor/core/util/flex_vector.h"
 
@@ -36,8 +37,8 @@ namespace perfetto::trace_processor::core::exec {
 struct HashAggregateSpec {
   // With no key columns, all rows are in one group, and that group is output
   // as a row even if there are no input rows.
-  std::vector<uint32_t> key_columns;
-  std::vector<AggregateCall> aggregates;
+  core::ArenaSpan<uint32_t> key_columns;
+  core::ArenaSpan<AggregateCall> aggregates;
 };
 
 // Groups rows by their keys and outputs one row per group. Each output row has
@@ -53,13 +54,13 @@ class HashAggregate : public Breaker {
   const void* type() const override { return &kType; }
   void DescribeColumns(StepColumns* out) const override {
     out->keeps = StepColumns::Keeps::kNone;
-    out->reads = spec_.key_columns;
+    out->reads.assign(spec_.key_columns.begin(), spec_.key_columns.end());
     DescribeAggregateReads(spec_.aggregates, out);
     out->added = static_cast<uint32_t>(spec_.key_columns.size() +
                                        spec_.aggregates.size());
   }
 
-  explicit HashAggregate(HashAggregateSpec);
+  HashAggregate(core::Arena&, HashAggregateSpec);
   ~HashAggregate() override;
 
  private:
@@ -105,9 +106,9 @@ class HashAggregate : public Breaker {
   uint32_t GroupCount(const State&) const;
 
   HashAggregateSpec spec_;
-  std::vector<std::unique_ptr<AggregateFunction>> functions_;
+  core::ArenaSpan<const AggregateFunction*> functions_;
   // The offset of each aggregate's state within a group's payload.
-  std::vector<uint32_t> offsets_;
+  core::ArenaSpan<uint32_t> offsets_;
   uint32_t state_words_ = 0;
 };
 

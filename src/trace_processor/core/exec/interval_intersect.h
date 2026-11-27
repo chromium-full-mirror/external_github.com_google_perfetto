@@ -25,6 +25,7 @@
 #include "src/trace_processor/core/exec/interval_lanes.h"
 #include "src/trace_processor/core/exec/operator.h"
 #include "src/trace_processor/core/exec/row_batch.h"
+#include "src/trace_processor/core/util/arena.h"
 
 namespace perfetto::trace_processor::core::exec {
 
@@ -51,7 +52,7 @@ class IntervalIntersect : public Source {
   // Each operand is read in full before any region is found, and their keys
   // are compared pairwise, in order. Every operand's source must outlive
   // this. Two are the fewest which can have a region in common.
-  explicit IntervalIntersect(std::vector<CollectedInputSpec>);
+  explicit IntervalIntersect(core::ArenaSpan<CollectedInputSpec>);
   ~IntervalIntersect() override;
 
   std::unique_ptr<OperatorState> MakeState(Context&) const override;
@@ -62,7 +63,7 @@ class IntervalIntersect : public Source {
  private:
   friend class PipelineFormatter;
 
-  std::vector<CollectedInputSpec> operands_;
+  core::ArenaSpan<CollectedInputSpec> operands_;
 };
 
 }  // namespace perfetto::trace_processor::core::exec

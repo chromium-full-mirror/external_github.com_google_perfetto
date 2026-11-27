@@ -29,6 +29,7 @@
 #include "src/trace_processor/core/exec/row_batch.h"
 #include "src/trace_processor/core/exec/row_store.h"
 #include "src/trace_processor/core/exec/run_held.h"
+#include "src/trace_processor/core/util/arena.h"
 #include "src/trace_processor/core/util/bit_vector.h"
 #include "src/trace_processor/core/util/flex_vector.h"
 
@@ -36,7 +37,7 @@ namespace perfetto::trace_processor::core::exec {
 
 struct IntervalFlattenSpec {
   IntervalLaneSpec lanes;
-  std::vector<AggregateCall> aggregates;
+  core::ArenaSpan<AggregateCall> aggregates;
 };
 
 // INTERVAL FLATTEN. The input must be grouped by the keys and ordered by ts
@@ -61,7 +62,7 @@ class IntervalFlatten : public Operator {
                                        spec_.aggregates.size() + 1);
   }
 
-  explicit IntervalFlatten(IntervalFlattenSpec);
+  IntervalFlatten(core::Arena&, IntervalFlattenSpec);
   ~IntervalFlatten() override;
 
   std::unique_ptr<OperatorState> MakeState(Context&) const override;
@@ -197,8 +198,8 @@ class IntervalFlatten : public Operator {
   // Whether the input has PER columns.
   bool keyed_;
   // By aggregate of the spec.
-  std::vector<std::unique_ptr<AggregateFunction>> functions_;
-  std::vector<uint32_t> offsets_;
+  core::ArenaSpan<const AggregateFunction*> functions_;
+  core::ArenaSpan<uint32_t> offsets_;
   uint32_t stride_ = 0;
   // Whether every function can subtract, so AggregateDeltas may be used.
   bool subtract_ = false;
